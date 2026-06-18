@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>SHRI K N PAPERS — Client Portal</title>
+<style>
+  :root{
+    --bg:#0f1411; --surface:#18211c; --surface2:#1f2a23; --surface3:#26332b;
+    --border:#2c3a31; --text:#e8efe9; --text2:#aab8af; --text3:#6f7d74;
+    --green:#22c55e; --accent:#166534; --red:#ef4444; --amber:#d97706;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+  .wrap{max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:20}
+  .brand{font-weight:800;font-size:16px;letter-spacing:.5px}
+  .brand span{color:var(--green)}
+  .who{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+  .login{flex:1;display:flex;flex-direction:column;justify-content:center;padding:30px 24px;gap:14px}
+  .login h1{font-size:22px;font-weight:800}
+  .login h1 span{color:var(--green)}
+  .login p{color:var(--text2);font-size:13px;line-height:1.5;margin-bottom:6px}
+  label{font-size:12px;color:var(--text2);font-weight:600;display:block;margin-bottom:5px}
+  input,select{width:100%;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;outline:none}
+  input:focus,select:focus{border-color:var(--green)}
+  .btn{padding:12px 16px;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;background:var(--accent);color:#fff}
+  .btn:active{transform:scale(.98)}
+  .btn:disabled{opacity:.6}
+  .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+  .tabs{display:flex;border-bottom:1px solid var(--border);position:sticky;top:53px;background:var(--bg);z-index:10}
+  .tab{flex:1;text-align:center;padding:12px;font-size:13px;font-weight:700;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent}
+  .tab.on{color:var(--green);border-bottom-color:var(--green)}
+  .content{flex:1;padding:14px 14px 90px}
+  .group-h{font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin:14px 4px 6px}
+  .prod{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .prod-name{font-weight:700;font-size:14px}
+  .prod-sub{font-size:11px;color:var(--text3);margin-top:2px}
+  .prod-qty{font-size:12px;color:var(--green);font-weight:700;margin-top:3px}
+  .prod-out .prod-qty{color:var(--text3)}
+  .book-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .book-btn:disabled{background:var(--surface3);color:var(--text3)}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;justify-content:center;z-index:50}
+  .overlay.show{display:flex}
+  .sheet{background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:18px 18px 26px}
+  .sheet h3{font-size:16px;margin-bottom:4px}
+  .sheet .muted{font-size:12px;color:var(--text2);margin-bottom:14px}
+  .row{display:flex;gap:10px;margin-bottom:12px}.row>div{flex:1}
+  .booking{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;border-left:3px solid var(--amber)}
+  .booking.confirmed{border-left-color:var(--green)}
+  .booking.rejected{border-left-color:var(--red);opacity:.7}
+  .b-prod{font-weight:700;font-size:14px}
+  .b-meta{font-size:11px;color:var(--text3);margin-top:3px}
+  .pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;float:right}
+  .pill-amber{background:rgba(217,119,6,.15);color:var(--amber)}
+  .pill-green{background:rgba(34,197,94,.15);color:var(--green)}
+  .pill-red{background:rgba(239,68,68,.15);color:var(--red)}
+  .empty{text-align:center;color:var(--text3);padding:40px 20px;font-size:13px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:99;opacity:0;transition:opacity .25s;pointer-events:none;text-align:center;max-width:90%}
+  .toast.show{opacity:1}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast"></div>
+
+<div class="overlay" id="book-overlay">
+  <div class="sheet">
+    <h3 id="bk-title">Request material</h3>
+    <div class="muted" id="bk-avail"></div>
+    <div class="row">
+      <div><label>Quantity</label><input id="bk-qty" type="text" inputmode="decimal" placeholder="0"/></div>
+      <div><label>Unit</label><select id="bk-unit"><option>Bundles</option><option>Packets</option></select></div>
+    </div>
+    <label>Note (optional)</label>
+    <input id="bk-note" placeholder="Any special instruction"/>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeBook()">Cancel</button>
+      <button class="btn" style="flex:1" id="bk-confirm" onclick="confirmBook()">Send request</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
+
+const $ = id => document.getElementById(id);
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+
+// REST helpers (anon key). Portal can only touch the safe view, portal_login RPC, and insert bookings.
+async function sbGet(path){
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`,{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+  if(!r.ok) throw new Error('Read failed ('+r.status+')');
+  return r.json();
+}
+async function sbRpc(fn, body){
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){}; throw new Error(`${fn} failed (${r.status})${t?': '+t.slice(0,140):''}`); }
+  return r.json();
+}
+async function sbInsert(table, row){
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(row)});
+  if(!r.ok){ const t=await r.text(); throw new Error('Save failed: '+t); }
+  return true;
+}
+
+let CLIENT = null;
+let STOCK = [];
+let bookingTarget = null;
+
+function render(){ CLIENT ? renderStock() : renderLogin(); }
+
+function renderLogin(){
+  $('app').innerHTML = `
+    <div class="topbar"><div class="brand">SHRI <span>K N</span> PAPERS</div></div>
+    <div class="login">
+      <h1>Client <span>Portal</span></h1>
+      <p>Sign in to see available stock and book material. Your booking reaches us directly.</p>
+      <div><label>Username</label><input id="lg-user" placeholder="username" autocomplete="off"/></div>
+      <div><label>Password</label><input id="lg-pass" type="password" placeholder="••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+      <button class="btn" id="lg-btn" onclick="doLogin()">Sign in</button>
+    </div>`;
+}
+
+async function doLogin(){
+  const u=($('lg-user').value||'').trim(), p=($('lg-pass').value||'').trim();
+  if(!u||!p){ toast('Enter username and password'); return; }
+  const btn=$('lg-btn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try{
+    const res = await sbRpc('portal_login',{p_username:u, p_password:p});
+    if(!res || !res.length){ toast('Wrong username or password'); btn.disabled=false; btn.textContent='Sign in'; return; }
+    CLIENT = { id:res[0].customer_id, name:res[0].customer_name, u, p };
+    try{ localStorage.setItem('kn_portal_session', JSON.stringify(CLIENT)); }catch(_){}
+    await loadStock();
+    render();
+  }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Sign in'; }
+}
+function logout(){
+  CLIENT=null; STOCK=[];
+  try{ localStorage.removeItem('kn_portal_session'); }catch(_){}
+  render();
+}
+
+// Restore a saved session on page load / refresh so the client stays logged in.
+async function restoreSession(){
+  let saved=null;
+  try{ saved = JSON.parse(localStorage.getItem('kn_portal_session')||'null'); }catch(_){}
+  if(saved && saved.u && saved.p){
+    CLIENT = saved;
+    try{ await loadStock(); }catch(_){}
+  }
+  render();
+}
+
+// Global: hide actual stock numbers from clients (show Available/Not only).
+// Later this can be driven per-client from the server.
+const HIDE_STOCK_QTY = true;
+
+async function loadStock(){
+  try{ STOCK = await sbRpc('portal_stock',{p_username:CLIENT.u, p_password:CLIENT.p}) || []; window._stockErr=''; }
+  catch(e){ STOCK=[]; window._stockErr = e.message || 'Unknown error'; toast('Could not load stock'); }
+}
+
+function isAvail(s){ return s.bundles_avail==null ? (s.free_kg>0) : (s.bundles_avail>0); }
+function qtyLabel(s){
+  if(HIDE_STOCK_QTY) return isAvail(s) ? 'Available' : 'Not available';
+  if(s.bundles_avail==null) return Math.round(s.free_kg)+' kg';
+  return s.bundles_avail>0 ? s.bundles_avail+' bundles' : 'Out of stock';
+}
+
+function stockRowsHtml(items){
+  const groups={};
+  items.forEach(s=>{ const g=s.category||'Other'; (groups[g]=groups[g]||[]).push(s); });
+  let list='';
+  Object.keys(groups).sort().forEach(g=>{
+    list+=`<div class="group-h">${g}</div>`;
+    groups[g].forEach(s=>{
+      const avail=isAvail(s);
+      const sub=[s.size,s.gsm?s.gsm+' GSM':'',s.color].filter(Boolean).join(' • ');
+      list+=`<div class="prod ${avail?'':'prod-out'}">
+        <div><div class="prod-name">${s.name}</div>
+        <div class="prod-sub">${sub||'&nbsp;'}</div>
+        <div class="prod-qty">${avail?'✔ Available':'Not available'}</div></div>
+        <button class="book-btn" onclick='openBook(${JSON.stringify(s).replace(/'/g,"&#39;")})'>Request</button>
+      </div>`;
+    });
+  });
+  return list;
+}
+
+function renderStock(){
+  const list=stockRowsHtml(STOCK);
+  $('app').innerHTML=`
+    <div class="topbar">
+      <div class="brand" style="max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${CLIENT.name}</div>
+      <div class="who"><span class="dot"></span><span onclick="logout()" style="color:var(--green);cursor:pointer;font-weight:600">Log out</span></div>
+    </div>
+    <div class="tabs">
+      <div class="tab on" onclick="renderStock()">Stock</div>
+      <div class="tab" onclick="showMyBookings()">My Requests</div>
+      <div class="tab" onclick="showMyOrders()">My Orders</div>
+    </div>
+    <div class="content">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input style="flex:1;margin:0" placeholder="🔍 Search material..." oninput="filterStock(this.value)"/>
+        <button class="btn" style="white-space:nowrap;padding:12px 14px" onclick="openStockSheet()">📄 Sheet</button>
+      </div>
+      <div id="stock-list">${list||('<div class="empty">No stock available right now.'+(window._stockErr?'<br><br><span style="color:var(--text3);font-size:11px">'+window._stockErr+'</span>':'')+'</div>')}</div>
+    </div>`;
+}
+
+function filterStock(q){
+  q=(q||'').toLowerCase();
+  const items=STOCK.filter(s=>!q||((s.name||'')+(s.category||'')+(s.size||'')+(s.color||'')).toLowerCase().includes(q));
+  const el=$('stock-list'); if(el) el.innerHTML=stockRowsHtml(items)||'<div class="empty">No matching material.</div>';
+}
+
+function openBook(s){
+  bookingTarget=s;
+  $('bk-title').textContent='Request '+s.name;
+  $('bk-avail').textContent=isAvail(s)?'✔ Available — request how many bundles':'Not in stock now — you can still request; we will confirm';
+  $('bk-qty').value=''; $('bk-note').value=''; $('bk-unit').value='Bundles';
+  $('bk-confirm').textContent='Send request';
+  $('book-overlay').classList.add('show');
+}
+function closeBook(){ $('book-overlay').classList.remove('show'); }
+
+// Step 1: client sends an availability REQUEST (status 'requested').
+async function confirmBook(){
+  const qty=parseFloat($('bk-qty').value);
+  if(!qty||qty<=0){ toast('Enter a quantity'); return; }
+  const btn=$('bk-confirm'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try{
+    await sbInsert('bookings',{
+      customer_id:CLIENT.id, customer_name:CLIENT.name,
+      product_id:bookingTarget.product_id, product_name:bookingTarget.name,
+      qty, qty_type:$('bk-unit').value.toLowerCase(),
+      note:($('bk-note').value||'').trim()||null, status:'requested'
+    });
+    closeBook();
+    toast('Request sent — we will confirm availability');
+  }catch(e){ toast(e.message); }
+  btn.disabled=false; btn.textContent='Send request';
+}
+
+// Step 3: once we mark a request 'available', client confirms the booking.
+async function bookConfirmed(id){
+  if(!confirm('Confirm this booking? We will prepare your order.')) return;
+  try{
+    await sbRpc('portal_book_confirmed',{p_username:CLIENT.u, p_password:CLIENT.p, p_booking_id:id});
+    toast('Booked! We will process your order.');
+    showMyBookings();
+  }catch(e){ toast(e.message); }
+}
+
+function _switchTab(idx){
+  const tabs=$('app').querySelectorAll('.tab');
+  tabs.forEach((t,i)=>t.classList.toggle('on', i===idx));
+}
+
+// "My Requests" — requested → available (Book) → booked. Status-aware.
+async function showMyBookings(){
+  _switchTab(1);
+  const box=$('app').querySelector('.content');
+  box.innerHTML='<div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div>';
+  let rows=[];
+  try{ rows = await sbRpc('portal_my_bookings',{p_username:CLIENT.u, p_password:CLIENT.p}) || []; }
+  catch(e){ box.innerHTML='<div class="empty">Could not load your requests.<br><br><span style="color:var(--text3);font-size:11px">'+(e.message||'Unknown error')+'</span></div>'; return; }
+  if(!rows.length){ box.innerHTML='<div class="empty">No requests yet.<br><br>Find material on the Stock tab and tap Request.</div>'; return; }
+  const when = ts => { const d=new Date(ts); return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})+', '+d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); };
+  const pill = s =>
+    s==='available' ? '<span class="pill pill-green">AVAILABLE ✓</span>' :
+    s==='booked'    ? '<span class="pill pill-green">BOOKED ✓</span>' :
+    s==='ordered'   ? '<span class="pill pill-green">IN PROCESS</span>' :
+    s==='rejected'  ? '<span class="pill pill-red">NOT AVAILABLE</span>' :
+                      '<span class="pill pill-amber">WAITING</span>';
+  box.innerHTML = rows.map(b=>`
+    <div class="booking ${b.status==='available'||b.status==='booked'||b.status==='ordered'?'confirmed':b.status==='rejected'?'rejected':''}">
+      ${pill(b.status)}
+      <div class="b-prod">${b.product_name||'-'}</div>
+      <div class="b-meta">${b.qty} ${b.qty_type||''} • ${when(b.created_at)}${b.note?' • '+b.note:''}</div>
+      ${b.status==='available' ? `<button class="btn" style="margin-top:8px;width:100%" onclick="bookConfirmed('${b.id}')">📦 Book now</button>` : ''}
+    </div>`).join('');
+}
+
+// "My Orders" — sales orders delivered to this client.
+async function showMyOrders(){
+  _switchTab(2);
+  const box=$('app').querySelector('.content');
+  box.innerHTML='<div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div>';
+  let rows=[];
+  try{ rows = await sbRpc('portal_my_orders',{p_username:CLIENT.u, p_password:CLIENT.p}) || []; }
+  catch(e){ box.innerHTML='<div class="empty">Could not load your orders.<br><br><span style="color:var(--text3);font-size:11px">'+(e.message||'Unknown error')+'</span></div>'; return; }
+  if(!rows.length){ box.innerHTML='<div class="empty">No delivered orders yet.</div>'; return; }
+  const fmt = d => { if(!d) return ''; const t=new Date(d); return isNaN(t)?d:t.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); };
+  // group by delivered_date
+  const groups={};
+  rows.forEach(o=>{ const k=o.delivered_date||o.order_date||'—'; (groups[k]=groups[k]||[]).push(o); });
+  let html='';
+  Object.keys(groups).sort((a,b)=>b.localeCompare(a)).forEach(k=>{
+    html+=`<div class="group-h">📦 Delivered ${fmt(k)}</div>`;
+    groups[k].forEach(o=>{
+      html+=`<div class="booking confirmed">
+        <span class="pill pill-green">DELIVERED ✓</span>
+        <div class="b-prod">${o.product_name||'-'}</div>
+        <div class="b-meta">${o.qty} ${o.qty_type||''}${o.note?' • '+o.note:''}</div>
+      </div>`;
+    });
+  });
+  box.innerHTML=html;
+}
+
+// ── STOCK SHEET (client) ──────────────────────────────────────────────────
+// Clean in-stock / out-of-stock sheet, grouped by category, client name on top.
+// View on screen + download as PDF (html2pdf loaded on demand).
+function _sheetInStock(s){ return s.bundles_avail==null ? (s.free_kg>0) : (s.bundles_avail>0); }
+
+function buildStockSheetEl(){
+  const groups={};
+  STOCK.forEach(s=>{ const g=s.category||'Other'; (groups[g]=groups[g]||[]).push(s); });
+  let blocks='';
+  Object.keys(groups).sort().forEach(g=>{
+    const items=groups[g].slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'',undefined,{numeric:true}));
+    let rows='';
+    items.forEach(s=>{
+      const inS=_sheetInStock(s);
+      const sub=[s.size,s.gsm?s.gsm+'g':'',s.color].filter(Boolean).join(' ');
+      const qty = HIDE_STOCK_QTY
+                ? (inS ? 'Available' : '—')
+                : (!inS ? '—'
+                  : (s.bundles_avail!=null ? s.bundles_avail+(s.bundles_avail==1?' bdl':' bdls')
+                  : Math.round(s.free_kg)+' kg'));
+      rows+=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:2px 0;border-bottom:1px dotted #e3e3e3">
+        <span style="font-size:11px;color:#222">${s.name}${sub?` <span style="color:#999;font-size:9px">${sub}</span>`:''}</span>
+        <span style="font-size:11px;font-weight:700;white-space:nowrap;color:${inS?'#166534':'#bbb'}">${qty}</span>
+      </div>`;
+    });
+    blocks+=`<div style="break-inside:avoid;margin-bottom:8px">
+      <div style="background:#166534;color:#fff;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;padding:3px 7px;border-radius:3px">${g}</div>
+      <div style="padding:3px 4px 0">${rows}</div>
+    </div>`;
+  });
+  const today=new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+  const el=document.createElement('div');
+  el.style.cssText='width:794px;background:#fff;color:#222;padding:14px 16px;font-family:-apple-system,Segoe UI,Roboto,sans-serif';
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #166534;padding-bottom:6px;margin-bottom:10px">
+      <div style="font-size:15px;font-weight:800;color:#166534">${CLIENT.name} — Stock Sheet</div>
+      <div style="font-size:11px;color:#555">${today}</div>
+    </div>
+    <div style="column-count:3;column-width:230px;column-gap:12px">${blocks}</div>
+    <div style="margin-top:8px;font-size:8px;color:#888;border-top:1px solid #ddd;padding-top:4px">
+      Availability shown is indicative and subject to confirmation. Please place a booking to reserve material.
+    </div>`;
+  return el;
+}
+
+function openStockSheet(){
+  if(!STOCK.length){ toast('No stock to show'); return; }
+  let ovl=$('sheet-overlay'); if(ovl) ovl.remove();
+  ovl=document.createElement('div'); ovl.id='sheet-overlay';
+  ovl.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;display:flex;flex-direction:column';
+  const bar=document.createElement('div');
+  bar.style.cssText='display:flex;gap:8px;padding:10px;background:#111;align-items:center;flex-shrink:0';
+  bar.innerHTML=`<div style="color:#fff;font-weight:700;font-size:14px;flex:1">Stock Sheet</div>
+    <button class="btn" id="sheet-dl" style="padding:8px 14px">⬇ PDF</button>
+    <button class="btn btn-ghost" style="padding:8px 14px" onclick="$('sheet-overlay').remove()">✕</button>`;
+  const scroll=document.createElement('div');
+  scroll.style.cssText='flex:1;overflow:auto;padding:10px;display:flex;justify-content:center;align-items:flex-start';
+  const sheet=buildStockSheetEl();
+  sheet.style.transformOrigin='top center';
+  // scale to fit narrow phone screens while keeping the A4 layout
+  const fit=()=>{ const w=scroll.clientWidth-20; sheet.style.transform = w<794 ? `scale(${(w/794).toFixed(3)})` : 'none'; };
+  scroll.appendChild(sheet);
+  ovl.appendChild(bar); ovl.appendChild(scroll);
+  document.body.appendChild(ovl);
+  setTimeout(fit,30);
+  $('sheet-dl').onclick=()=>downloadStockSheet();
+}
+
+function _loadHtml2Pdf(){
+  return new Promise((res,rej)=>{
+    if(window.html2pdf) return res();
+    const sc=document.createElement('script');
+    sc.src='https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    sc.onload=()=>res(); sc.onerror=()=>rej(new Error('Could not load PDF library (check internet)'));
+    document.head.appendChild(sc);
+  });
+}
+
+async function downloadStockSheet(){
+  const btn=$('sheet-dl'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span>'; }
+  try{
+    await _loadHtml2Pdf();
+    const el=buildStockSheetEl();
+    const holder=document.createElement('div');
+    holder.style.cssText='position:fixed;left:0;top:0;z-index:-1;opacity:0';
+    el.style.flex='0 0 auto'; holder.appendChild(el); document.body.appendChild(holder);
+    el.offsetHeight; await new Promise(r=>setTimeout(r,250));
+    const safe=(CLIENT.name||'Stock').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+    const today=new Date().toISOString().split('T')[0];
+    try{
+      await html2pdf().set({
+        margin:0, filename:`Stock_Sheet_${safe}_${today}.pdf`,
+        image:{type:'jpeg',quality:0.98},
+        html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',width:794,windowWidth:794,scrollX:0,scrollY:0},
+        jsPDF:{unit:'mm',format:'a4',orientation:'portrait',compress:true},
+        pagebreak:{mode:['css','legacy']}
+      }).from(el).save();
+    } finally { holder.remove(); }
+  }catch(e){ toast(e.message); }
+  if(btn){ btn.disabled=false; btn.innerHTML='⬇ PDF'; }
+}
+
+restoreSession();
+</script>
+</body>
+</html>
