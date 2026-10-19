@@ -88,6 +88,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
+const PORTAL_VER = 'v2';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -117,7 +118,8 @@ function render(){ CLIENT ? renderStock() : renderLogin(); }
 
 function renderLogin(){
   $('app').innerHTML = `
-    <div class="topbar"><div class="brand">SHRI <span>K N</span> PAPERS</div></div>
+    <div class="topbar"><div class="brand">SHRI <span>K N</span> PAPERS</div>
+      <span style="font-size:10px;color:var(--text3);border:1px solid var(--border);border-radius:10px;padding:1px 7px">${PORTAL_VER}</span></div>
     <div class="login">
       <h1>Client <span>Portal</span></h1>
       <p>Sign in to see available stock and book material. Your booking reaches us directly.</p>
@@ -231,7 +233,7 @@ function renderStock(){
   $('app').innerHTML=`
     <div class="topbar">
       <div class="brand" style="max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${CLIENT.name}</div>
-      <div class="who"><span class="dot"></span><span onclick="logout()" style="color:var(--green);cursor:pointer;font-weight:600">Log out</span></div>
+      <div class="who"><span style="color:var(--text3);font-size:10px;border:1px solid var(--border);border-radius:10px;padding:1px 6px">${PORTAL_VER}</span><span class="dot"></span><span onclick="logout()" style="color:var(--green);cursor:pointer;font-weight:600">Log out</span></div>
     </div>
     <div class="tabs">
       <div class="tab on" onclick="renderStock()">Stock</div>
