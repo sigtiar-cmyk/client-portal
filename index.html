@@ -88,7 +88,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v2';
+const PORTAL_VER = 'v3';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -176,7 +176,16 @@ async function loadCommission(){
     const gross=a.diff*a.vol; a.commission=gross*(1-(a.cut||0)/100); total+=a.commission;
     (byClient[a.client]=byClient[a.client]||[]).push(a);
   });
-  if(total>0) COMMISSION={ byClient, total };
+  if(total<=0){ COMMISSION=null; return; }
+  // redemption history → paid / pending / available
+  let reds=[], paid=0, reserved=0, pendingExists=false;
+  try{ reds = await sbRpc('portal_my_redemptions',{p_username:CLIENT.u, p_password:CLIENT.p}) || []; }catch(_){}
+  reds.forEach(r=>{
+    if(r.status==='paid') paid += (parseFloat(r.paid_amount)||parseFloat(r.requested_amount)||0);
+    else if(r.status==='requested'){ reserved += parseFloat(r.requested_amount)||0; pendingExists=true; }
+  });
+  const available = Math.max(0, total - paid - reserved);
+  COMMISSION={ byClient, total, redemptions:reds, paid, available, pendingExists };
 }
 function _inr(n){ return '₹'+Math.round(n||0).toLocaleString('en-IN'); }
 
@@ -351,16 +360,55 @@ async function showMyOrders(){
   box.innerHTML=html;
 }
 
+async function requestPayout(){
+  if(!COMMISSION || (COMMISSION.available||0)<=0) return;
+  const amt = COMMISSION.available;
+  if(!confirm('Request payout of '+_inr(amt)+'?')) return;
+  const btn=$('redeem-btn'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span>'; }
+  try{
+    const res = await sbRpc('portal_request_redemption',{p_username:CLIENT.u, p_password:CLIENT.p, p_amount:amt, p_note:null});
+    const r = (res&&res.length)?res[0]:null;
+    if(r && r.ok){ toast('Payout requested — we will process it'); }
+    else { toast((r&&r.message)||'Could not request'); }
+    await loadCommission();
+    showMyCommission();
+  }catch(e){ toast(e.message); if(btn){ btn.disabled=false; } }
+}
+
 // "Commission" — referral earnings from clients this client introduced.
 function showMyCommission(){
   _switchTab(3);
   const box=$('app').querySelector('.content');
   if(!COMMISSION || !COMMISSION.total){ box.innerHTML='<div class="empty">No referral commission yet.</div>'; return; }
   const volDisp = a => a.unit==='pcs' ? (Math.round(a.vol)+' pc') : (Math.round(a.vol)+' kg');
-  let html = `<div style="background:var(--surface);border:1px solid var(--green);border-radius:12px;padding:16px;margin-bottom:14px;text-align:center">
-      <div style="font-size:12px;color:var(--text2)">Total commission earned</div>
-      <div style="font-size:26px;font-weight:800;color:var(--green);margin-top:2px">${_inr(COMMISSION.total)}</div>
+  const paid=COMMISSION.paid||0, avail=COMMISSION.available||0, pending=COMMISSION.pendingExists;
+  let html = `<div style="background:var(--surface);border:1px solid var(--green);border-radius:12px;padding:16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;text-align:center">
+        <div style="flex:1"><div style="font-size:11px;color:var(--text2)">Earned</div><div style="font-size:18px;font-weight:800;color:var(--text)">${_inr(COMMISSION.total)}</div></div>
+        <div style="flex:1;border-left:1px solid var(--border)"><div style="font-size:11px;color:var(--text2)">Paid</div><div style="font-size:18px;font-weight:800;color:var(--text2)">${_inr(paid)}</div></div>
+        <div style="flex:1;border-left:1px solid var(--border)"><div style="font-size:11px;color:var(--text2)">Available</div><div style="font-size:18px;font-weight:800;color:var(--green)">${_inr(avail)}</div></div>
+      </div>
+      <button class="btn" style="width:100%;margin-top:12px" id="redeem-btn" ${(pending||avail<=0)?'disabled':''} onclick="requestPayout()">
+        ${pending ? '⏳ Payout requested — pending' : (avail>0 ? '💰 Request payout ('+_inr(avail)+')' : 'Nothing to redeem yet')}
+      </button>
     </div>`;
+  // redemption history
+  if((COMMISSION.redemptions||[]).length){
+    const when = ts => { const d=new Date(ts); return isNaN(d)?'':d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}); };
+    html += `<div class="group-h">Payout requests</div>`;
+    COMMISSION.redemptions.forEach(r=>{
+      const pill = r.status==='paid' ? '<span class="pill pill-green">PAID ✓</span>'
+                 : r.status==='rejected' ? '<span class="pill pill-red">DECLINED</span>'
+                 : '<span class="pill pill-amber">PENDING</span>';
+      const amt = r.status==='paid' ? (_inr(parseFloat(r.paid_amount)||parseFloat(r.requested_amount)||0)) : _inr(parseFloat(r.requested_amount)||0);
+      html += `<div class="booking ${r.status==='paid'?'confirmed':r.status==='rejected'?'rejected':''}">
+        ${pill}
+        <div class="b-prod">${amt}</div>
+        <div class="b-meta">${when(r.requested_at)}${r.utr?' • UTR '+r.utr:''}${r.status==='paid'&&r.settled_at?' • paid '+when(r.settled_at):''}</div>
+      </div>`;
+    });
+  }
+  html += `<div class="group-h" style="margin-top:14px">Earnings breakdown</div>`;
   Object.keys(COMMISSION.byClient).sort().forEach(cl=>{
     const lines = COMMISSION.byClient[cl];
     const sub = lines.reduce((s,a)=>s+a.commission,0);
