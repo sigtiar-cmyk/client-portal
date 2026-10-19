@@ -110,6 +110,7 @@ async function sbInsert(table, row){
 
 let CLIENT = null;
 let STOCK = [];
+let COMMISSION = null;   // {byClient, total} for referrers; null/empty otherwise
 let bookingTarget = null;
 
 function render(){ CLIENT ? renderStock() : renderLogin(); }
@@ -136,14 +137,46 @@ async function doLogin(){
     CLIENT = { id:res[0].customer_id, name:res[0].customer_name, u, p };
     try{ localStorage.setItem('kn_portal_session', JSON.stringify(CLIENT)); }catch(_){}
     await loadStock();
+    await loadCommission();
     render();
   }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Sign in'; }
 }
 function logout(){
-  CLIENT=null; STOCK=[];
+  CLIENT=null; STOCK=[]; COMMISSION=null;
   try{ localStorage.removeItem('kn_portal_session'); }catch(_){}
   render();
 }
+
+// ── Referral commission (for clients who refer others) ────────────────────
+// qty → kg / pieces, matching the admin app exactly.
+function _cmKg(r){ const q=parseFloat(r.qty)||0, t=(r.qty_type||'bundles').toLowerCase();
+  const bw=parseFloat(r.bundle_wt)||0, pw=parseFloat(r.packet_wt)||0, spp=parseFloat(r.sheets_per_packet)||1;
+  if(t==='bundles')return q*bw; if(t==='packets')return q*pw; if(t==='sheets')return (q/spp)*pw; if(t==='kg')return q; if(t==='mt')return q*1000; return q*bw; }
+function _cmPcs(r){ const q=parseFloat(r.qty)||0, t=(r.qty_type||'bundles').toLowerCase();
+  const np=parseFloat(r.num_packets)||1, spp=parseFloat(r.sheets_per_packet)||1, pw=parseFloat(r.packet_wt)||0;
+  if(t==='packets'||t==='pcs'||t==='reams')return q; if(t==='bundles')return q*np; if(t==='sheets')return q/spp; if(t==='kg')return pw?q/pw:0; if(t==='mt')return pw?(q*1000)/pw:0; return q*np; }
+async function loadCommission(){
+  COMMISSION=null;
+  let rows=[];
+  try{ rows = await sbRpc('portal_my_commission',{p_username:CLIENT.u, p_password:CLIENT.p}) || []; }
+  catch(e){ return; }   // RPC not installed yet, or none — simply no tab
+  if(!rows.length) return;
+  const agg={};
+  rows.forEach(r=>{
+    const unit = (r.incentive_unit==='pcs') ? 'pcs' : 'kg';
+    const vol  = unit==='pcs' ? _cmPcs(r) : _cmKg(r);
+    const key  = (r.client_name||'-') + '|' + (r.product_name||'-');
+    if(!agg[key]) agg[key] = { client:r.client_name||'-', product:r.product_name||'-', unit, diff:parseFloat(r.diff_rate)||0, cut:parseFloat(r.cut_pct)||0, vol:0 };
+    agg[key].vol += (vol||0);
+  });
+  let total=0; const byClient={};
+  Object.values(agg).forEach(a=>{
+    const gross=a.diff*a.vol; a.commission=gross*(1-(a.cut||0)/100); total+=a.commission;
+    (byClient[a.client]=byClient[a.client]||[]).push(a);
+  });
+  if(total>0) COMMISSION={ byClient, total };
+}
+function _inr(n){ return '₹'+Math.round(n||0).toLocaleString('en-IN'); }
 
 // Restore a saved session on page load / refresh so the client stays logged in.
 async function restoreSession(){
@@ -152,6 +185,7 @@ async function restoreSession(){
   if(saved && saved.u && saved.p){
     CLIENT = saved;
     try{ await loadStock(); }catch(_){}
+    try{ await loadCommission(); }catch(_){}
   }
   render();
 }
@@ -203,6 +237,7 @@ function renderStock(){
       <div class="tab on" onclick="renderStock()">Stock</div>
       <div class="tab" onclick="showMyBookings()">My Requests</div>
       <div class="tab" onclick="showMyOrders()">My Orders</div>
+      ${(COMMISSION && COMMISSION.total>0) ? '<div class="tab" onclick="showMyCommission()">Commission</div>' : ''}
     </div>
     <div class="content">
       <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -312,6 +347,32 @@ async function showMyOrders(){
     });
   });
   box.innerHTML=html;
+}
+
+// "Commission" — referral earnings from clients this client introduced.
+function showMyCommission(){
+  _switchTab(3);
+  const box=$('app').querySelector('.content');
+  if(!COMMISSION || !COMMISSION.total){ box.innerHTML='<div class="empty">No referral commission yet.</div>'; return; }
+  const volDisp = a => a.unit==='pcs' ? (Math.round(a.vol)+' pc') : (Math.round(a.vol)+' kg');
+  let html = `<div style="background:var(--surface);border:1px solid var(--green);border-radius:12px;padding:16px;margin-bottom:14px;text-align:center">
+      <div style="font-size:12px;color:var(--text2)">Total commission earned</div>
+      <div style="font-size:26px;font-weight:800;color:var(--green);margin-top:2px">${_inr(COMMISSION.total)}</div>
+    </div>`;
+  Object.keys(COMMISSION.byClient).sort().forEach(cl=>{
+    const lines = COMMISSION.byClient[cl];
+    const sub = lines.reduce((s,a)=>s+a.commission,0);
+    html += `<div class="group-h">${cl} — ${_inr(sub)}</div>`;
+    lines.sort((a,b)=>b.commission-a.commission).forEach(a=>{
+      html += `<div class="prod">
+        <div><div class="prod-name">${a.product}</div>
+          <div class="prod-sub">${volDisp(a)} • ₹${a.diff}/${a.unit==='pcs'?'pc':'kg'}</div></div>
+        <div style="font-weight:800;color:var(--green);font-size:14px">${_inr(a.commission)}</div>
+      </div>`;
+    });
+  });
+  html += `<div style="font-size:11px;color:var(--text3);text-align:center;margin-top:12px">Commission on clients you introduced. Figures update as orders are delivered.</div>`;
+  box.innerHTML = html;
 }
 
 // ── STOCK SHEET (client) ──────────────────────────────────────────────────
