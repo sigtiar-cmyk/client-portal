@@ -53,6 +53,14 @@
   .hrow-name{font-weight:700;font-size:14px}
   .hrow-sub{font-size:11px;color:var(--text3);margin-top:2px}
   .hrow-qty{font-weight:800;font-size:14px;color:var(--green);white-space:nowrap}
+  .dcard{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:14px;padding:13px 14px;margin-bottom:10px}
+  .dcard-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;gap:8px}
+  .dbadge{font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(34,197,94,.15);color:var(--green);white-space:nowrap}
+  .dcard-date{font-size:11px;color:var(--text3);white-space:nowrap}
+  .dc-line{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:13.5px;border-top:1px solid var(--border)}
+  .dc-line:first-of-type{border-top:none}
+  .dc-line .nm{font-weight:600}
+  .dc-line .q{font-weight:700;color:var(--text2);white-space:nowrap}
   .group-h{font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin:14px 4px 6px}
   .prod{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
   .prod-name{font-weight:700;font-size:14px}
@@ -108,7 +116,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v18';
+const PORTAL_VER = 'v19';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -359,16 +367,8 @@ async function renderHome(){
   if(COMMISSION && COMMISSION.total>0) tiles.push(`<div class="tile" onclick="showMyCommission()" style="cursor:pointer"><div class="tile-v" style="color:var(--green)">${_inr(COMMISSION.available||0)}</div><div class="tile-l">Commission ready</div></div>`);
   if(MYCLIENTS.length) tiles.push(`<div class="tile" onclick="showMyClients()" style="cursor:pointer"><div class="tile-v">${MYCLIENTS.length}</div><div class="tile-l">Your clients</div></div>`);
   const tEl=$('home-tiles'); if(tEl) tEl.innerHTML=tiles.join('');
-  // recently dispatched — individual delivered lines, newest first
-  const fmtD = d => { if(!d) return ''; const t=new Date(d); return isNaN(t)?d:t.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); };
-  const disp = orders.slice().sort((a,b)=>String(b.delivered_date||b.order_date||'').localeCompare(String(a.delivered_date||a.order_date||''))).slice(0,8);
-  const dEl=$('home-dispatch'); if(dEl){
-    dEl.innerHTML = disp.length ? disp.map(o=>`
-      <div class="hrow"><div><div class="hrow-name">${o.product_name||'-'}</div>
-        <div class="hrow-sub">🚚 Dispatched ${fmtD(o.delivered_date||o.order_date)}${o.note?' · '+o.note:''}</div></div>
-        <div class="hrow-qty">${o.qty||''} ${o.qty_type||''}</div></div>`).join('')
-      : '<div class="empty">No dispatches yet.</div>';
-  }
+  // recently dispatched — grouped delivery cards, newest first (last 4 dispatches)
+  const dEl=$('home-dispatch'); if(dEl) dEl.innerHTML=_dispatchCards(orders,4);
   // stock-with-you list
   const sEl=$('home-stock'); if(sEl){
     sEl.innerHTML = rows.length ? rows.map(r=>`
@@ -934,6 +934,21 @@ async function showMyBookings(target){
     </div>`).join('');
 }
 
+// Grouped delivery cards — same look as the admin's delivered orders.
+function _dispatchCards(orders, limitGroups){
+  const fmtD = d => { if(!d) return ''; const t=new Date(d); return isNaN(t)?d:t.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); };
+  const ushort = u => { u=(u||'').toLowerCase(); return u==='bundles'?'bdl':u==='packets'?'pkt':u==='sheets'?'sh':u==='reams'?'rm':u==='pcs'?'pc':u; };
+  const groups={};
+  (orders||[]).forEach(o=>{ const k=o.delivered_date||o.order_date||'—'; (groups[k]=groups[k]||[]).push(o); });
+  let keys=Object.keys(groups).sort((a,b)=>String(b).localeCompare(String(a)));
+  if(limitGroups) keys=keys.slice(0,limitGroups);
+  if(!keys.length) return '<div class="empty">No dispatches yet.</div>';
+  return keys.map(k=>`
+    <div class="dcard">
+      <div class="dcard-h"><span class="dbadge">✓ Delivered</span><span class="dcard-date">🚚 ${fmtD(k)}</span></div>
+      ${groups[k].map(o=>`<div class="dc-line"><span class="nm">${o.product_name||'-'}</span><span class="q">${o.qty||''} ${ushort(o.qty_type)}</span></div>`).join('')}
+    </div>`).join('');
+}
 // "My Orders" — sales orders delivered to this client.
 async function showMyOrders(target){
   const box=target||$('app').querySelector('.content');
@@ -942,22 +957,7 @@ async function showMyOrders(target){
   try{ rows = await sbRpc('portal_my_orders',{p_username:CLIENT.u, p_password:CLIENT.p}) || []; }
   catch(e){ box.innerHTML='<div class="empty">Could not load your orders.<br><br><span style="color:var(--text3);font-size:11px">'+(e.message||'Unknown error')+'</span></div>'; return; }
   if(!rows.length){ box.innerHTML='<div class="empty">No delivered orders yet.</div>'; return; }
-  const fmt = d => { if(!d) return ''; const t=new Date(d); return isNaN(t)?d:t.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); };
-  // group by delivered_date
-  const groups={};
-  rows.forEach(o=>{ const k=o.delivered_date||o.order_date||'—'; (groups[k]=groups[k]||[]).push(o); });
-  let html='';
-  Object.keys(groups).sort((a,b)=>b.localeCompare(a)).forEach(k=>{
-    html+=`<div class="group-h">📦 Delivered ${fmt(k)}</div>`;
-    groups[k].forEach(o=>{
-      html+=`<div class="booking confirmed">
-        <span class="pill pill-green">DELIVERED ✓</span>
-        <div class="b-prod">${o.product_name||'-'}</div>
-        <div class="b-meta">${o.qty} ${o.qty_type||''}${o.note?' • '+o.note:''}</div>
-      </div>`;
-    });
-  });
-  box.innerHTML=html;
+  box.innerHTML=_dispatchCards(rows);
 }
 
 async function requestPayout(){
