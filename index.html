@@ -88,7 +88,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v7';
+const PORTAL_VER = 'v8';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -288,6 +288,7 @@ function renderStock(){
       <div class="tab on" onclick="renderStock()">Stock</div>
       <div class="tab" onclick="showMyBookings()">My Requests</div>
       <div class="tab" onclick="showMyOrders()">My Orders</div>
+      <div class="tab" onclick="showMyMechanic()">My Mechanic</div>
       ${(COMMISSION && COMMISSION.total>0) ? '<div class="tab" onclick="showMyCommission()">Commission</div>' : ''}
       ${MYCLIENTS.length ? '<div class="tab" onclick="showDistribute()">Distribute</div>' : ''}
     </div>
@@ -351,6 +352,58 @@ function _switchTab(idx){
 function _activateTab(label){
   const tabs=$('app').querySelectorAll('.tab');
   tabs.forEach(t=>t.classList.toggle('on', t.textContent.trim()===label));
+}
+
+// ── My Mechanic: client adds their mechanic for admin approval ──────────────
+async function showMyMechanic(){
+  _activateTab('My Mechanic');
+  const box=$('app').querySelector('.content');
+  box.innerHTML='<div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div>';
+  let res=[];
+  try{ res = await sbRpc('portal_my_mechanic',{p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
+  const r = res[0]||{};
+  if(r.mechanic_name){
+    box.innerHTML = `<div class="booking confirmed"><span class="pill pill-green">LINKED ✓</span>
+      <div class="b-prod">🔧 ${r.mechanic_name}</div>
+      <div class="b-meta">This is your mechanic on record. Contact us to change it.</div></div>`;
+    return;
+  }
+  if(r.req_status==='pending'){
+    box.innerHTML = `<div class="booking"><span class="pill pill-amber">PENDING APPROVAL</span>
+      <div class="b-prod">🔧 ${r.req_name||''}</div>
+      <div class="b-meta">${r.req_phone||''}${r.req_phone?' • ':''}We'll review and link this shortly.</div></div>
+      <div style="font-size:12px;color:var(--text3);margin-top:10px;text-align:center">Submitted. You can wait for approval, or submit a correction below.</div>
+      ${_mechFormHtml({})}`;
+    return;
+  }
+  box.innerHTML = _mechFormHtml({ rejected: r.req_status==='rejected' });
+}
+function _mechFormHtml(o){
+  o=o||{};
+  return `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:12px">
+      <div style="font-weight:700;margin-bottom:4px">Add your mechanic</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Tell us who services your machine. We'll review and link them so they earn their commission.</div>
+      ${o.rejected?'<div style="font-size:12px;color:#f87171;margin-bottom:10px">Your previous request was not approved. You can submit again.</div>':''}
+      <label style="font-size:12px;color:var(--text3)">Mechanic name</label>
+      <input id="mm-name" style="width:100%;margin:4px 0 10px" placeholder="Full name"/>
+      <label style="font-size:12px;color:var(--text3)">Phone</label>
+      <input id="mm-phone" style="width:100%;margin:4px 0 10px" placeholder="Mobile number" inputmode="tel"/>
+      <label style="font-size:12px;color:var(--text3)">City (optional)</label>
+      <input id="mm-city" style="width:100%;margin:4px 0 10px" placeholder="City"/>
+      <button class="btn" id="mm-btn" style="width:100%;margin-top:6px" onclick="submitMechanic()">Submit for approval</button>
+    </div>`;
+}
+async function submitMechanic(){
+  const name=($('mm-name').value||'').trim();
+  if(!name){ toast('Enter the mechanic name'); return; }
+  const phone=($('mm-phone').value||'').trim(), city=($('mm-city').value||'').trim();
+  const btn=$('mm-btn'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span>'; }
+  try{
+    await sbRpc('portal_add_mechanic',{p_username:CLIENT.u,p_password:CLIENT.p,p_name:name,p_phone:phone,p_city:city});
+    toast('Submitted for approval');
+    showMyMechanic();
+  }catch(e){ toast(e.message); if(btn){ btn.disabled=false; btn.textContent='Submit for approval'; } }
 }
 
 // ── Distribute tab: log material passed to a linked client (for review) ──────
