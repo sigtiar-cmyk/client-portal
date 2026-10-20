@@ -108,7 +108,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v17';
+const PORTAL_VER = 'v18';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -338,8 +338,10 @@ async function renderHome(){
       <div class="hero-sub">Here's a quick look at what's with you and what's happening on your account.</div>
     </div>
     <div id="home-tiles" class="tiles"></div>
-    <div class="group-h">📦 Stock lying with you</div>
-    <div id="home-stock"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>`;
+    <div class="group-h">🚚 Recently dispatched</div>
+    <div id="home-dispatch"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>
+    <div class="group-h" style="margin-top:18px">📦 Stock lying with you</div>
+    <div id="home-stock"></div>`;
   // pull delivered orders (what they hold) + open requests
   let orders=[], bookings=[];
   try{ orders  = await sbRpc('portal_my_orders',  {p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
@@ -357,6 +359,16 @@ async function renderHome(){
   if(COMMISSION && COMMISSION.total>0) tiles.push(`<div class="tile" onclick="showMyCommission()" style="cursor:pointer"><div class="tile-v" style="color:var(--green)">${_inr(COMMISSION.available||0)}</div><div class="tile-l">Commission ready</div></div>`);
   if(MYCLIENTS.length) tiles.push(`<div class="tile" onclick="showMyClients()" style="cursor:pointer"><div class="tile-v">${MYCLIENTS.length}</div><div class="tile-l">Your clients</div></div>`);
   const tEl=$('home-tiles'); if(tEl) tEl.innerHTML=tiles.join('');
+  // recently dispatched — individual delivered lines, newest first
+  const fmtD = d => { if(!d) return ''; const t=new Date(d); return isNaN(t)?d:t.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); };
+  const disp = orders.slice().sort((a,b)=>String(b.delivered_date||b.order_date||'').localeCompare(String(a.delivered_date||a.order_date||''))).slice(0,8);
+  const dEl=$('home-dispatch'); if(dEl){
+    dEl.innerHTML = disp.length ? disp.map(o=>`
+      <div class="hrow"><div><div class="hrow-name">${o.product_name||'-'}</div>
+        <div class="hrow-sub">🚚 Dispatched ${fmtD(o.delivered_date||o.order_date)}${o.note?' · '+o.note:''}</div></div>
+        <div class="hrow-qty">${o.qty||''} ${o.qty_type||''}</div></div>`).join('')
+      : '<div class="empty">No dispatches yet.</div>';
+  }
   // stock-with-you list
   const sEl=$('home-stock'); if(sEl){
     sEl.innerHTML = rows.length ? rows.map(r=>`
