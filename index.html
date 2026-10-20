@@ -88,7 +88,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v3';
+const PORTAL_VER = 'v4';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -112,6 +112,7 @@ async function sbInsert(table, row){
 let CLIENT = null;
 let STOCK = [];
 let COMMISSION = null;   // {byClient, total} for referrers; null/empty otherwise
+let WA_NUMBER = '';      // per-client salesperson WhatsApp
 let bookingTarget = null;
 
 function render(){ CLIENT ? renderStock() : renderLogin(); }
@@ -140,11 +141,13 @@ async function doLogin(){
     try{ localStorage.setItem('kn_portal_session', JSON.stringify(CLIENT)); }catch(_){}
     await loadStock();
     await loadCommission();
+    await loadContact();
     render();
   }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Sign in'; }
 }
 function logout(){
-  CLIENT=null; STOCK=[]; COMMISSION=null;
+  CLIENT=null; STOCK=[]; COMMISSION=null; WA_NUMBER='';
+  const b=$('wa-fab'); if(b) b.remove();
   try{ localStorage.removeItem('kn_portal_session'); }catch(_){}
   render();
 }
@@ -189,6 +192,32 @@ async function loadCommission(){
 }
 function _inr(n){ return '₹'+Math.round(n||0).toLocaleString('en-IN'); }
 
+// ── WhatsApp "Chat with us" (per-client number) ───────────────────────────
+async function loadContact(){
+  WA_NUMBER='';
+  try{
+    const res = await sbRpc('portal_contact',{p_username:CLIENT.u, p_password:CLIENT.p}) || [];
+    if(res.length && res[0].wa_number) WA_NUMBER = String(res[0].wa_number).replace(/[^0-9]/g,'');
+  }catch(_){}
+  renderWaButton();
+}
+function renderWaButton(){
+  let b = $('wa-fab'); if(b) b.remove();
+  if(!WA_NUMBER || !CLIENT) return;
+  // normalise to international (assume India if a bare 10-digit number)
+  let num = WA_NUMBER;
+  if(num.length===10) num = '91'+num;
+  const text = encodeURIComponent('Hello, this is '+(CLIENT.name||'')+' (K N Papers portal).');
+  b = document.createElement('a');
+  b.id='wa-fab';
+  b.href='https://wa.me/'+num+'?text='+text;
+  b.target='_blank'; b.rel='noopener';
+  b.setAttribute('aria-label','Chat with us on WhatsApp');
+  b.style.cssText='position:fixed;right:16px;bottom:20px;z-index:80;width:56px;height:56px;border-radius:50%;background:#25D366;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,.4);text-decoration:none';
+  b.innerHTML='<svg viewBox="0 0 32 32" width="30" height="30" fill="#fff"><path d="M16 3C9.4 3 4 8.4 4 15c0 2.1.6 4.1 1.6 5.9L4 29l8.3-1.6c1.7.9 3.6 1.4 5.7 1.4 6.6 0 12-5.4 12-12S22.6 3 16 3zm0 21.8c-1.8 0-3.5-.5-5-1.4l-.4-.2-4.9 1 1-4.8-.2-.4c-1-1.6-1.5-3.4-1.5-5.3 0-5.5 4.5-10 10-10s10 4.5 10 10-4.5 10.1-10 10.1zm5.5-7.4c-.3-.2-1.8-.9-2-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-1 1.2-.2.2-.4.2-.7.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.5-.5c.2-.2.2-.3.3-.5.1-.2.1-.4 0-.5-.1-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.3 5.1 4.6.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.8-.7 2-1.4.3-.7.3-1.3.2-1.4-.1-.2-.3-.2-.6-.4z"/></svg>';
+  document.body.appendChild(b);
+}
+
 // Restore a saved session on page load / refresh so the client stays logged in.
 async function restoreSession(){
   let saved=null;
@@ -197,6 +226,7 @@ async function restoreSession(){
     CLIENT = saved;
     try{ await loadStock(); }catch(_){}
     try{ await loadCommission(); }catch(_){}
+    try{ await loadContact(); }catch(_){}
   }
   render();
 }
