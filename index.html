@@ -108,7 +108,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v13';
+const PORTAL_VER = 'v14';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -433,12 +433,15 @@ function _activateTab(label){
   tabs.forEach(t=>t.classList.toggle('on', t.textContent.indexOf(label)>-1));
 }
 
-// ── Quote: client builds a quotation for their own customer (they type rates) ─
-let QT_PRODUCTS=[]; let _qtSeq=0;
+// ── Quote: client builds a quotation for their own customer ─────────────────
+// Known K N products auto-convert bundles→kg / pieces via the bundle master;
+// the client can also type any product we don't deal with (free text).
+let QT_PRODUCTS=[]; let _qtInfo={}; let _qtSeq=0;
 async function showQuote(){
   _activateTab('Quote');
   const box=$('app').querySelector('.content');
   box.innerHTML = `
+    <datalist id="qt-prodlist"></datalist>
     <div class="group-h">New quotation</div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
       <label>Quote for (your customer)</label>
@@ -449,6 +452,7 @@ async function showQuote(){
       </div>
     </div>
     <div class="group-h">Items</div>
+    <div style="font-size:11px;color:var(--text3);margin:0 2px 8px">Pick a product and the bundle→kg/pc is worked out for you. Or type any item you deal with yourself — then the rate is per the unit you choose.</div>
     <div id="qt-items"></div>
     <button class="btn btn-ghost" style="width:100%;margin:6px 0 14px" onclick="qtAddRow()">+ Add item</button>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
@@ -458,36 +462,61 @@ async function showQuote(){
       </div>
       <div id="qt-totals" style="margin-top:12px;font-size:13px"></div>
     </div>
-    <button class="btn" style="width:100%" onclick="qtGeneratePdf()">📄 Download / print quote</button>`;
+    <button class="btn" id="qt-dl" style="width:100%" onclick="qtGeneratePdf()">📄 Download PDF</button>`;
   $('qt-date').value=new Date().toISOString().split('T')[0];
-  if(!QT_PRODUCTS.length){ try{ QT_PRODUCTS = await sbRpc('portal_products',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ QT_PRODUCTS=[]; } }
+  if(!QT_PRODUCTS.length){
+    try{ QT_PRODUCTS = await sbRpc('portal_quote_products',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ QT_PRODUCTS=[]; }
+    _qtInfo={}; QT_PRODUCTS.forEach(p=>{ _qtInfo[(p.product_name||'').trim().toLowerCase()]=p; });
+  }
+  const dl=$('qt-prodlist'); if(dl) dl.innerHTML=QT_PRODUCTS.map(p=>`<option value="${(p.product_name||'').replace(/"/g,'&quot;')}">`).join('');
   qtAddRow(); qtRecalc();
 }
-function _qtProdOpts(){ return '<option value="">Select product...</option>'+QT_PRODUCTS.map(p=>`<option value="${(p.product_name||'').replace(/"/g,'&quot;')}">${p.product_name||'-'}</option>`).join(''); }
 function qtAddRow(){
   const wrap=$('qt-items'); if(!wrap) return;
   const row=document.createElement('div');
   row.className='qt-row'; row.id='qr'+(_qtSeq++);
   row.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px';
   row.innerHTML=`
-    <select class="qt-prod" oninput="qtRecalc()">${_qtProdOpts()}</select>
+    <input class="qt-prod" list="qt-prodlist" placeholder="Type or pick a product" oninput="qtRecalc()"/>
     <div style="display:flex;gap:8px;margin-top:8px">
       <input class="qt-qty" style="flex:1" inputmode="decimal" placeholder="Qty" oninput="qtRecalc()"/>
-      <select class="qt-unit" style="flex:1" oninput="qtRecalc()"><option>Bundles</option><option>Packets</option><option>Reams</option><option>Kg</option><option>Pcs</option></select>
+      <select class="qt-unit" style="flex:1" oninput="qtRecalc()"><option>Bundles</option><option>Packets</option><option>Sheets</option><option>Reams</option><option>Kg</option><option>Pcs</option></select>
       <input class="qt-rate" style="flex:1" inputmode="decimal" placeholder="Rate ₹" oninput="qtRecalc()"/>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
-      <span class="qt-amt" style="font-weight:700;color:var(--green)">₹0</span>
-      <span onclick="this.closest('.qt-row').remove();qtRecalc()" style="color:var(--red);font-size:12px;cursor:pointer">✕ Remove</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:8px">
+      <span class="qt-calc" style="font-size:11px;color:var(--text3)"></span>
+      <span style="display:flex;align-items:center;gap:12px;white-space:nowrap"><span class="qt-amt" style="font-weight:700;color:var(--green)">₹0</span>
+        <span onclick="this.closest('.qt-row').remove();qtRecalc()" style="color:var(--red);font-size:12px;cursor:pointer">✕</span></span>
     </div>`;
   wrap.appendChild(row);
 }
-function _qtRows(){ return Array.from(document.querySelectorAll('.qt-row')).map(r=>({
-  product:r.querySelector('.qt-prod').value, qty:parseFloat(r.querySelector('.qt-qty').value)||0,
-  unit:r.querySelector('.qt-unit').value, rate:parseFloat(r.querySelector('.qt-rate').value)||0, el:r })); }
+function _qtRowData(r){
+  const product=r.querySelector('.qt-prod').value.trim();
+  const qty=parseFloat(r.querySelector('.qt-qty').value)||0;
+  const unit=r.querySelector('.qt-unit').value;
+  const rate=parseFloat(r.querySelector('.qt-rate').value)||0;
+  const info=_qtInfo[product.toLowerCase()];
+  let base=qty, baseUnit=unit.toLowerCase(), known=false;
+  if(info){
+    known=true;
+    const o={qty,qty_type:unit.toLowerCase(),bundle_wt:info.bundle_wt,packet_wt:info.packet_wt,num_packets:info.num_packets,sheets_per_packet:info.sheets_per_packet};
+    if((info.incentive_unit||'')==='pcs'){ base=_cmPcs(o); baseUnit='pc'; }
+    else { base=_cmKg(o); baseUnit='kg'; }
+  }
+  return {product,qty,unit,rate,info,known,base,baseUnit,amt:base*rate,el:r};
+}
+function _qtRows(){ return Array.from(document.querySelectorAll('.qt-row')).map(_qtRowData); }
 function qtRecalc(){
   let sub=0;
-  _qtRows().forEach(r=>{ const amt=r.qty*r.rate; sub+=amt; const a=r.el.querySelector('.qt-amt'); if(a)a.textContent=_inr(amt); });
+  _qtRows().forEach(r=>{
+    sub+=r.amt;
+    const a=r.el.querySelector('.qt-amt'); if(a)a.textContent=_inr(r.amt);
+    const c=r.el.querySelector('.qt-calc');
+    if(c){ c.textContent=(r.qty>0&&r.rate>0)
+      ? (r.known ? `${r.qty} ${r.unit.toLowerCase()} = ${Math.round(r.base*100)/100} ${r.baseUnit} × ₹${r.rate}/${r.baseUnit}`
+                 : `${r.qty} ${r.unit.toLowerCase()} × ₹${r.rate}`)
+      : ''; }
+  });
   const fwd=parseFloat(($('qt-fwd')||{}).value)||0, gst=parseFloat(($('qt-gst')||{}).value)||0;
   const taxable=sub+fwd, gstAmt=taxable*gst/100, total=taxable+gstAmt;
   const t=$('qt-totals'); if(!t) return;
@@ -497,7 +526,10 @@ function qtRecalc(){
     ${gst?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--text3)">GST ${gst}%</span><span>${_inr(gstAmt)}</span></div>`:''}
     <div style="display:flex;justify-content:space-between;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--border);font-weight:800;font-size:16px"><span>Total</span><span style="color:var(--green)">${_inr(total)}</span></div>`;
 }
-function qtGeneratePdf(){
+function _loadH2P(){ return new Promise((res,rej)=>{ if(window.html2pdf) return res();
+  const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+  s.onload=res; s.onerror=()=>rej(new Error('pdf engine')); document.head.appendChild(s); }); }
+async function qtGeneratePdf(){
   const rows=_qtRows().filter(r=>r.product && r.qty>0 && r.rate>0);
   if(!rows.length){ toast('Add at least one item with product, qty and rate'); return; }
   const cust=($('qt-cust').value||'').trim()||'—';
@@ -505,37 +537,43 @@ function qtGeneratePdf(){
   const date=$('qt-date').value||'';
   const fwd=parseFloat($('qt-fwd').value)||0, gst=parseFloat($('qt-gst').value)||0;
   const inr=n=>'₹'+Math.round(n).toLocaleString('en-IN');
-  let sub=0; const lines=rows.map(r=>{ const amt=r.qty*r.rate; sub+=amt;
-    return `<tr><td>${r.product}</td><td style="text-align:right">${r.qty} ${r.unit}</td><td style="text-align:right">₹${r.rate}</td><td style="text-align:right">${inr(amt)}</td></tr>`; }).join('');
+  const bd='border:1px solid #bbb;padding:7px 9px', bdr=bd+';text-align:right';
+  let sub=0; const lines=rows.map(r=>{ sub+=r.amt;
+    const qtyCell = r.known ? `${r.qty} ${r.unit.toLowerCase()}<br><span style="color:#777;font-size:10px">${Math.round(r.base*100)/100} ${r.baseUnit}</span>` : `${r.qty} ${r.unit.toLowerCase()}`;
+    const rateCell = `₹${r.rate}/${r.known?r.baseUnit:r.unit.toLowerCase()}`;
+    return `<tr><td style="${bd}">${r.product}</td><td style="${bdr}">${qtyCell}</td><td style="${bdr}">${rateCell}</td><td style="${bdr}">${inr(r.amt)}</td></tr>`; }).join('');
   const taxable=sub+fwd, gstAmt=taxable*gst/100, total=taxable+gstAmt;
   const fmtDate = date? new Date(date).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '';
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quotation</title><style>
-    *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box} body{margin:0;padding:24px;color:#111}
-    .h{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #166534;padding-bottom:10px}
-    .seller{font-size:20px;font-weight:800;color:#166534} .doc{font-size:22px;font-weight:800;color:#777;letter-spacing:1px}
-    .meta{margin:12px 0;font-size:13px;color:#333;line-height:1.6} table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
-    th,td{border:1px solid #bbb;padding:7px 9px} th{background:#f0f7f2;text-align:left}
-    .tot{margin-top:14px;max-width:290px;margin-left:auto;font-size:13px}
-    .tot div{display:flex;justify-content:space-between;padding:4px 0} .tot .g{font-weight:800;font-size:16px;border-top:2px solid #166534;padding-top:8px;color:#166534}
-    .ft{margin-top:28px;font-size:11px;color:#999}
-    @media print{body{padding:4px}}
-  </style></head><body>
-    <div class="h"><div class="seller">${CLIENT.name||''}</div><div class="doc">QUOTATION</div></div>
-    <div class="meta"><b>Quote for:</b> ${cust}${phone?' · '+phone:''}<br><b>Date:</b> ${fmtDate}</div>
-    <table><thead><tr><th>Product</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead><tbody>${lines}</tbody></table>
-    <div class="tot">
-      <div><span>Subtotal</span><span>${inr(sub)}</span></div>
-      ${fwd?`<div><span>Forwarding</span><span>${inr(fwd)}</span></div>`:''}
-      ${gst?`<div><span>GST ${gst}%</span><span>${inr(gstAmt)}</span></div>`:''}
-      <div class="g"><span>Total</span><span>${inr(total)}</span></div>
-    </div>
-    <div class="ft">Generated via K N Papers client portal</div>
-  </body></html>`;
-  const w=window.open('','_blank');
-  if(!w){ toast('Allow pop-ups to open the quote'); return; }
-  w.document.open(); w.document.write(html); w.document.close();
-  // trigger the print/save dialog from here (no inline script in the doc)
-  setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 450);
+  const el=document.createElement('div');
+  el.style.cssText='width:760px;background:#fff;color:#111;padding:26px;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box';
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #166534;padding-bottom:10px">
+      <div style="font-size:21px;font-weight:800;color:#166534">${CLIENT.name||''}</div>
+      <div style="font-size:23px;font-weight:800;color:#777;letter-spacing:1px">QUOTATION</div></div>
+    <div style="margin:12px 0;font-size:13px;color:#333;line-height:1.6"><b>Quote for:</b> ${cust}${phone?' · '+phone:''}<br><b>Date:</b> ${fmtDate}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr><th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:left">Product</th>
+        <th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:right">Qty</th>
+        <th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:right">Rate</th>
+        <th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:right">Amount</th></tr></thead>
+      <tbody>${lines}</tbody></table>
+    <div style="margin-top:14px;max-width:300px;margin-left:auto;font-size:13px">
+      <div style="display:flex;justify-content:space-between;padding:4px 0"><span>Subtotal</span><span>${inr(sub)}</span></div>
+      ${fwd?`<div style="display:flex;justify-content:space-between;padding:4px 0"><span>Forwarding</span><span>${inr(fwd)}</span></div>`:''}
+      ${gst?`<div style="display:flex;justify-content:space-between;padding:4px 0"><span>GST ${gst}%</span><span>${inr(gstAmt)}</span></div>`:''}
+      <div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;border-top:2px solid #166534;padding-top:8px;margin-top:4px;color:#166534"><span>Total</span><span>${inr(total)}</span></div>
+    </div>`;
+  const holder=document.createElement('div');
+  holder.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:10px';
+  holder.appendChild(el); document.body.appendChild(holder);
+  const btn=$('qt-dl'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Preparing...'; }
+  try{
+    await _loadH2P();
+    await html2pdf().set({ margin:8, filename:'Quotation.pdf', image:{type:'jpeg',quality:0.96},
+      html2canvas:{scale:2,backgroundColor:'#ffffff',width:760,windowWidth:760},
+      jsPDF:{unit:'mm',format:'a4',orientation:'portrait',compress:true} }).from(el).save();
+  }catch(e){ toast('Could not build PDF — check your connection'); }
+  finally{ holder.remove(); if(btn){ btn.disabled=false; btn.textContent='📄 Download PDF'; } }
 }
 
 // ── My Mechanic: client adds their mechanic for admin approval ──────────────
