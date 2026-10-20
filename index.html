@@ -88,7 +88,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v4';
+const PORTAL_VER = 'v5';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -113,6 +113,8 @@ let CLIENT = null;
 let STOCK = [];
 let COMMISSION = null;   // {byClient, total} for referrers; null/empty otherwise
 let WA_NUMBER = '';      // per-client salesperson WhatsApp
+let MYCLIENTS = [];      // clients linked to this user (for the Distribute tab)
+let MYPRODUCTS = [];     // product list for distribution entries
 let bookingTarget = null;
 
 function render(){ CLIENT ? renderStock() : renderLogin(); }
@@ -142,11 +144,18 @@ async function doLogin(){
     await loadStock();
     await loadCommission();
     await loadContact();
+    await loadDistData();
     render();
   }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Sign in'; }
 }
+// ── Distribution (for referrers/resellers who pass material to their clients) ─
+async function loadDistData(){
+  MYCLIENTS=[]; MYPRODUCTS=[];
+  try{ MYCLIENTS = await sbRpc('portal_my_referred_clients',{p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
+  if(MYCLIENTS.length){ try{ MYPRODUCTS = await sbRpc('portal_products',{p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){} }
+}
 function logout(){
-  CLIENT=null; STOCK=[]; COMMISSION=null; WA_NUMBER='';
+  CLIENT=null; STOCK=[]; COMMISSION=null; WA_NUMBER=''; MYCLIENTS=[]; MYPRODUCTS=[];
   const b=$('wa-fab'); if(b) b.remove();
   try{ localStorage.removeItem('kn_portal_session'); }catch(_){}
   render();
@@ -227,6 +236,7 @@ async function restoreSession(){
     try{ await loadStock(); }catch(_){}
     try{ await loadCommission(); }catch(_){}
     try{ await loadContact(); }catch(_){}
+    try{ await loadDistData(); }catch(_){}
   }
   render();
 }
@@ -279,6 +289,7 @@ function renderStock(){
       <div class="tab" onclick="showMyBookings()">My Requests</div>
       <div class="tab" onclick="showMyOrders()">My Orders</div>
       ${(COMMISSION && COMMISSION.total>0) ? '<div class="tab" onclick="showMyCommission()">Commission</div>' : ''}
+      ${MYCLIENTS.length ? '<div class="tab" onclick="showDistribute()">Distribute</div>' : ''}
     </div>
     <div class="content">
       <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -336,6 +347,61 @@ async function bookConfirmed(id){
 function _switchTab(idx){
   const tabs=$('app').querySelectorAll('.tab');
   tabs.forEach((t,i)=>t.classList.toggle('on', i===idx));
+}
+function _activateTab(label){
+  const tabs=$('app').querySelectorAll('.tab');
+  tabs.forEach(t=>t.classList.toggle('on', t.textContent.trim()===label));
+}
+
+// ── Distribute tab: log material passed to a linked client (for review) ──────
+async function showDistribute(){
+  _activateTab('Distribute');
+  const box=$('app').querySelector('.content');
+  const clientOpts = MYCLIENTS.map(c=>`<option value="${c.client_id}">${c.client_name||'-'}</option>`).join('');
+  const prodOpts = MYPRODUCTS.map(p=>`<option value="${p.product_id}">${p.product_name||'-'}</option>`).join('');
+  box.innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:700;margin-bottom:4px">Log a distribution</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Record material you passed on to one of your clients. We review it before it counts toward commission.</div>
+      <label style="font-size:12px;color:var(--text3)">Client</label>
+      <select id="ds-client" style="width:100%;margin:4px 0 10px">${clientOpts||'<option value="">No clients linked</option>'}</select>
+      <label style="font-size:12px;color:var(--text3)">Product</label>
+      <select id="ds-prod" style="width:100%;margin:4px 0 10px">${prodOpts||'<option value="">No products</option>'}</select>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1"><label style="font-size:12px;color:var(--text3)">Qty</label><input id="ds-qty" type="number" min="0" style="width:100%;margin-top:4px"/></div>
+        <div style="flex:1"><label style="font-size:12px;color:var(--text3)">Unit</label><select id="ds-unit" style="width:100%;margin-top:4px"><option value="bundles">Bundles</option><option value="packets">Packets</option><option value="sheets">Sheets</option><option value="kg">KG</option></select></div>
+      </div>
+      <button class="btn" id="ds-btn" style="width:100%;margin-top:12px" onclick="submitDistribution()">Submit for review</button>
+    </div>
+    <div id="ds-history"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>`;
+  loadDistHistory();
+}
+async function loadDistHistory(){
+  const el=$('ds-history'); if(!el) return;
+  let rows=[];
+  try{ rows = await sbRpc('portal_my_distributions',{p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
+  if(!rows.length){ el.innerHTML='<div class="empty">No distributions logged yet.</div>'; return; }
+  const fmt=d=>{ if(!d)return''; const t=new Date(d); return isNaN(t)?d:t.toLocaleDateString('en-IN',{day:'numeric',month:'short'}); };
+  const pill=s=> s==='Delivered'?'<span class="pill pill-green">APPROVED ✓</span>': s==='Cancelled'?'<span class="pill pill-red">REJECTED</span>':'<span class="pill pill-amber">IN REVIEW</span>';
+  el.innerHTML='<div class="group-h">Your logged distributions</div>'+rows.map(r=>`
+    <div class="booking">${pill(r.status)}
+      <div class="b-prod">${r.product_name||'-'} → ${r.end_client_name||'-'}</div>
+      <div class="b-meta">${r.qty} ${r.qty_type||''} • ${fmt(r.order_date)}</div>
+    </div>`).join('');
+}
+async function submitDistribution(){
+  const cid=$('ds-client').value, pid=$('ds-prod').value, qty=parseFloat($('ds-qty').value), unit=$('ds-unit').value;
+  if(!cid){ toast('Pick a client'); return; }
+  if(!pid){ toast('Pick a product'); return; }
+  if(!qty||qty<=0){ toast('Enter a quantity'); return; }
+  const btn=$('ds-btn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try{
+    await sbRpc('portal_log_distribution',{p_username:CLIENT.u,p_password:CLIENT.p,p_end_client:cid,p_product:pid,p_qty:qty,p_qty_type:unit});
+    toast('Submitted for review');
+    $('ds-qty').value='';
+    loadDistHistory();
+  }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Submit for review'; return; }
+  btn.disabled=false; btn.textContent='Submit for review';
 }
 
 // "My Requests" — requested → available (Book) → booked. Status-aware.
