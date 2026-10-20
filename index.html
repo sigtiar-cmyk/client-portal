@@ -108,7 +108,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v12';
+const PORTAL_VER = 'v13';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -317,6 +317,7 @@ function _tabsHtml(){
       <div class="tab" onclick="renderStock()">🏷️ Stock</div>
       <div class="tab" onclick="showMyBookings()">📨 Requests</div>
       <div class="tab" onclick="showMyOrders()">📦 Orders</div>
+      <div class="tab" onclick="showQuote()">📝 Quote</div>
       <div class="tab" onclick="showMyMechanic()">🔧 Mechanic</div>
       <div class="tab" onclick="showMyClients()">🤝 Clients</div>
       ${(COMMISSION && COMMISSION.total>0) ? '<div class="tab" onclick="showMyCommission()">💰 Commission</div>' : ''}
@@ -430,6 +431,111 @@ function _switchTab(idx){
 function _activateTab(label){
   const tabs=$('app').querySelectorAll('.tab');
   tabs.forEach(t=>t.classList.toggle('on', t.textContent.indexOf(label)>-1));
+}
+
+// ── Quote: client builds a quotation for their own customer (they type rates) ─
+let QT_PRODUCTS=[]; let _qtSeq=0;
+async function showQuote(){
+  _activateTab('Quote');
+  const box=$('app').querySelector('.content');
+  box.innerHTML = `
+    <div class="group-h">New quotation</div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
+      <label>Quote for (your customer)</label>
+      <input id="qt-cust" placeholder="Customer name"/>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <div style="flex:1"><label>Phone (optional)</label><input id="qt-phone" inputmode="tel" placeholder="Mobile"/></div>
+        <div style="flex:1"><label>Date</label><input id="qt-date" type="date"/></div>
+      </div>
+    </div>
+    <div class="group-h">Items</div>
+    <div id="qt-items"></div>
+    <button class="btn btn-ghost" style="width:100%;margin:6px 0 14px" onclick="qtAddRow()">+ Add item</button>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;gap:10px">
+        <div style="flex:1"><label>Forwarding ₹</label><input id="qt-fwd" inputmode="decimal" value="0" oninput="qtRecalc()"/></div>
+        <div style="flex:1"><label>GST %</label><input id="qt-gst" inputmode="decimal" value="0" oninput="qtRecalc()"/></div>
+      </div>
+      <div id="qt-totals" style="margin-top:12px;font-size:13px"></div>
+    </div>
+    <button class="btn" style="width:100%" onclick="qtGeneratePdf()">📄 Download / print quote</button>`;
+  $('qt-date').value=new Date().toISOString().split('T')[0];
+  if(!QT_PRODUCTS.length){ try{ QT_PRODUCTS = await sbRpc('portal_products',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ QT_PRODUCTS=[]; } }
+  qtAddRow(); qtRecalc();
+}
+function _qtProdOpts(){ return '<option value="">Select product...</option>'+QT_PRODUCTS.map(p=>`<option value="${(p.product_name||'').replace(/"/g,'&quot;')}">${p.product_name||'-'}</option>`).join(''); }
+function qtAddRow(){
+  const wrap=$('qt-items'); if(!wrap) return;
+  const row=document.createElement('div');
+  row.className='qt-row'; row.id='qr'+(_qtSeq++);
+  row.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px';
+  row.innerHTML=`
+    <select class="qt-prod" oninput="qtRecalc()">${_qtProdOpts()}</select>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input class="qt-qty" style="flex:1" inputmode="decimal" placeholder="Qty" oninput="qtRecalc()"/>
+      <select class="qt-unit" style="flex:1" oninput="qtRecalc()"><option>Bundles</option><option>Packets</option><option>Reams</option><option>Kg</option><option>Pcs</option></select>
+      <input class="qt-rate" style="flex:1" inputmode="decimal" placeholder="Rate ₹" oninput="qtRecalc()"/>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+      <span class="qt-amt" style="font-weight:700;color:var(--green)">₹0</span>
+      <span onclick="this.closest('.qt-row').remove();qtRecalc()" style="color:var(--red);font-size:12px;cursor:pointer">✕ Remove</span>
+    </div>`;
+  wrap.appendChild(row);
+}
+function _qtRows(){ return Array.from(document.querySelectorAll('.qt-row')).map(r=>({
+  product:r.querySelector('.qt-prod').value, qty:parseFloat(r.querySelector('.qt-qty').value)||0,
+  unit:r.querySelector('.qt-unit').value, rate:parseFloat(r.querySelector('.qt-rate').value)||0, el:r })); }
+function qtRecalc(){
+  let sub=0;
+  _qtRows().forEach(r=>{ const amt=r.qty*r.rate; sub+=amt; const a=r.el.querySelector('.qt-amt'); if(a)a.textContent=_inr(amt); });
+  const fwd=parseFloat(($('qt-fwd')||{}).value)||0, gst=parseFloat(($('qt-gst')||{}).value)||0;
+  const taxable=sub+fwd, gstAmt=taxable*gst/100, total=taxable+gstAmt;
+  const t=$('qt-totals'); if(!t) return;
+  t.innerHTML=`
+    <div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--text3)">Subtotal</span><span>${_inr(sub)}</span></div>
+    ${fwd?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--text3)">Forwarding</span><span>${_inr(fwd)}</span></div>`:''}
+    ${gst?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--text3)">GST ${gst}%</span><span>${_inr(gstAmt)}</span></div>`:''}
+    <div style="display:flex;justify-content:space-between;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--border);font-weight:800;font-size:16px"><span>Total</span><span style="color:var(--green)">${_inr(total)}</span></div>`;
+}
+function qtGeneratePdf(){
+  const rows=_qtRows().filter(r=>r.product && r.qty>0 && r.rate>0);
+  if(!rows.length){ toast('Add at least one item with product, qty and rate'); return; }
+  const cust=($('qt-cust').value||'').trim()||'—';
+  const phone=($('qt-phone').value||'').trim();
+  const date=$('qt-date').value||'';
+  const fwd=parseFloat($('qt-fwd').value)||0, gst=parseFloat($('qt-gst').value)||0;
+  const inr=n=>'₹'+Math.round(n).toLocaleString('en-IN');
+  let sub=0; const lines=rows.map(r=>{ const amt=r.qty*r.rate; sub+=amt;
+    return `<tr><td>${r.product}</td><td style="text-align:right">${r.qty} ${r.unit}</td><td style="text-align:right">₹${r.rate}</td><td style="text-align:right">${inr(amt)}</td></tr>`; }).join('');
+  const taxable=sub+fwd, gstAmt=taxable*gst/100, total=taxable+gstAmt;
+  const fmtDate = date? new Date(date).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '';
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quotation</title><style>
+    *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box} body{margin:0;padding:24px;color:#111}
+    .h{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #166534;padding-bottom:10px}
+    .seller{font-size:20px;font-weight:800;color:#166534} .doc{font-size:22px;font-weight:800;color:#777;letter-spacing:1px}
+    .meta{margin:12px 0;font-size:13px;color:#333;line-height:1.6} table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+    th,td{border:1px solid #bbb;padding:7px 9px} th{background:#f0f7f2;text-align:left}
+    .tot{margin-top:14px;max-width:290px;margin-left:auto;font-size:13px}
+    .tot div{display:flex;justify-content:space-between;padding:4px 0} .tot .g{font-weight:800;font-size:16px;border-top:2px solid #166534;padding-top:8px;color:#166534}
+    .ft{margin-top:28px;font-size:11px;color:#999}
+    @media print{body{padding:4px}}
+  </style></head><body>
+    <div class="h"><div class="seller">${CLIENT.name||''}</div><div class="doc">QUOTATION</div></div>
+    <div class="meta"><b>Quote for:</b> ${cust}${phone?' · '+phone:''}<br><b>Date:</b> ${fmtDate}</div>
+    <table><thead><tr><th>Product</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead><tbody>${lines}</tbody></table>
+    <div class="tot">
+      <div><span>Subtotal</span><span>${inr(sub)}</span></div>
+      ${fwd?`<div><span>Forwarding</span><span>${inr(fwd)}</span></div>`:''}
+      ${gst?`<div><span>GST ${gst}%</span><span>${inr(gstAmt)}</span></div>`:''}
+      <div class="g"><span>Total</span><span>${inr(total)}</span></div>
+    </div>
+    <div class="ft">Generated via K N Papers client portal</div>
+  </body></html>`;
+  const w=window.open('','_blank');
+  if(!w){ toast('Allow pop-ups to open the quote'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  // trigger the print/save dialog from here (no inline script in the doc)
+  setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 450);
 }
 
 // ── My Mechanic: client adds their mechanic for admin approval ──────────────
