@@ -108,7 +108,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v15';
+const PORTAL_VER = 'v16';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -462,14 +462,46 @@ async function showQuote(){
       </div>
       <div id="qt-totals" style="margin-top:12px;font-size:13px"></div>
     </div>
-    <button class="btn" id="qt-dl" style="width:100%" onclick="qtGeneratePdf()">📄 Download PDF</button>`;
+    <button class="btn" id="qt-dl" style="width:100%" onclick="qtGeneratePdf()">📄 Download &amp; save quote</button>
+
+    <div class="group-h" style="margin-top:20px">Your own products</div>
+    <div style="font-size:11px;color:var(--text3);margin:0 2px 8px">Save items you deal with that we don't carry — they'll be ready to pick in the product list.</div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input id="qt-myp" style="flex:1" placeholder="e.g. Gum Tape Roll" onkeydown="if(event.key==='Enter')qtAddMyProduct()"/>
+      <button class="btn btn-ghost" style="white-space:nowrap" onclick="qtAddMyProduct()">+ Save</button>
+    </div>
+    <div id="qt-myp-list" style="margin-bottom:6px"></div>
+
+    <div class="group-h" style="margin-top:20px">Saved quotes</div>
+    <div id="qt-saved"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>`;
   $('qt-date').value=new Date().toISOString().split('T')[0];
   if(!QT_PRODUCTS.length){
     try{ QT_PRODUCTS = await sbRpc('portal_quote_products',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ QT_PRODUCTS=[]; }
     _qtInfo={}; QT_PRODUCTS.forEach(p=>{ _qtInfo[(p.product_name||'').trim().toLowerCase()]=p; });
   }
-  const dl=$('qt-prodlist'); if(dl) dl.innerHTML=QT_PRODUCTS.map(p=>`<option value="${(p.product_name||'').replace(/"/g,'&quot;')}">`).join('');
+  await _qtLoadMyProducts();
+  _qtRefreshDatalist(); _qtRenderMyProducts();
   qtAddRow(); qtRecalc();
+  qtLoadSaved();
+}
+let MY_PRODUCTS=[];
+async function _qtLoadMyProducts(){ try{ const r=await sbRpc('portal_my_products',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; MY_PRODUCTS=r.map(x=>x.name).filter(Boolean); }catch(_){ MY_PRODUCTS=[]; } }
+function _qtRefreshDatalist(){ const dl=$('qt-prodlist'); if(!dl) return;
+  const names=QT_PRODUCTS.map(p=>p.product_name).concat(MY_PRODUCTS);
+  dl.innerHTML=names.map(n=>`<option value="${(n||'').replace(/"/g,'&quot;')}">`).join(''); }
+function _qtRenderMyProducts(){ const el=$('qt-myp-list'); if(!el) return;
+  el.innerHTML = MY_PRODUCTS.length
+    ? MY_PRODUCTS.map(n=>`<span style="display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:4px 9px 4px 11px;margin:0 6px 6px 0;font-size:12px">${n}<span data-n="${(n||'').replace(/"/g,'&quot;')}" onclick="qtDelMyProduct(this.getAttribute('data-n'))" style="color:var(--red);cursor:pointer">✕</span></span>`).join('')
+    : '<span style="color:var(--text3);font-size:12px">None yet.</span>'; }
+async function qtAddMyProduct(){
+  const inp=$('qt-myp'); const name=(inp.value||'').trim(); if(!name){ toast('Enter a product name'); return; }
+  try{ await sbRpc('portal_add_my_product',{p_username:CLIENT.u,p_password:CLIENT.p,p_name:name}); inp.value='';
+    await _qtLoadMyProducts(); _qtRefreshDatalist(); _qtRenderMyProducts(); toast('Product saved'); }
+  catch(e){ toast(e.message); }
+}
+async function qtDelMyProduct(name){ if(!name) return;
+  try{ await sbRpc('portal_del_my_product',{p_username:CLIENT.u,p_password:CLIENT.p,p_name:name});
+    await _qtLoadMyProducts(); _qtRefreshDatalist(); _qtRenderMyProducts(); }catch(e){ toast(e.message); }
 }
 function qtAddRow(){
   const wrap=$('qt-items'); if(!wrap) return;
@@ -529,28 +561,23 @@ function qtRecalc(){
 function _loadH2P(){ return new Promise((res,rej)=>{ if(window.html2pdf) return res();
   const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
   s.onload=res; s.onerror=()=>rej(new Error('pdf engine')); document.head.appendChild(s); }); }
-async function qtGeneratePdf(){
-  const rows=_qtRows().filter(r=>r.product && r.qty>0 && r.rate>0);
-  if(!rows.length){ toast('Add at least one item with product, qty and rate'); return; }
-  const cust=($('qt-cust').value||'').trim()||'—';
-  const phone=($('qt-phone').value||'').trim();
-  const date=$('qt-date').value||'';
-  const fwd=parseFloat($('qt-fwd').value)||0, gst=parseFloat($('qt-gst').value)||0;
+// Shared PDF builder — used by a live quote and by re-downloading a saved one.
+async function _qtRenderPdf(meta, items, fwd, gst){
   const inr=n=>'₹'+Math.round(n).toLocaleString('en-IN');
   const bd='border:1px solid #bbb;padding:7px 9px', bdr=bd+';text-align:right';
-  let sub=0; const lines=rows.map(r=>{ sub+=r.amt;
-    const qtyCell = r.known ? `${r.qty} ${r.unit.toLowerCase()}<br><span style="color:#777;font-size:10px">${Math.round(r.base*100)/100} ${r.baseUnit}</span>` : `${r.qty} ${r.unit.toLowerCase()}`;
-    const rateCell = `₹${r.rate}/${r.known?r.baseUnit:r.unit.toLowerCase()}`;
+  let sub=0; const lines=items.map(r=>{ sub+=r.amt;
+    const qtyCell = r.known ? `${r.qty} ${(r.unit||'').toLowerCase()}<br><span style="color:#777;font-size:10px">${Math.round(r.base*100)/100} ${r.baseUnit}</span>` : `${r.qty} ${(r.unit||'').toLowerCase()}`;
+    const rateCell = `₹${r.rate}/${r.known?r.baseUnit:(r.unit||'').toLowerCase()}`;
     return `<tr><td style="${bd}">${r.product}</td><td style="${bdr}">${qtyCell}</td><td style="${bdr}">${rateCell}</td><td style="${bdr}">${inr(r.amt)}</td></tr>`; }).join('');
   const taxable=sub+fwd, gstAmt=taxable*gst/100, total=taxable+gstAmt;
-  const fmtDate = date? new Date(date).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '';
+  const fmtDate = meta.date? new Date(meta.date).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '';
   const el=document.createElement('div');
   el.style.cssText='width:760px;background:#fff;color:#111;padding:26px;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box';
   el.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #166534;padding-bottom:10px">
       <div style="font-size:21px;font-weight:800;color:#166534">${CLIENT.name||''}</div>
       <div style="font-size:23px;font-weight:800;color:#777;letter-spacing:1px">QUOTATION</div></div>
-    <div style="margin:12px 0;font-size:13px;color:#333;line-height:1.6"><b>Quote for:</b> ${cust}${phone?' · '+phone:''}<br><b>Date:</b> ${fmtDate}</div>
+    <div style="margin:12px 0;font-size:13px;color:#333;line-height:1.6"><b>Quote for:</b> ${meta.cust||'—'}${meta.phone?' · '+meta.phone:''}<br><b>Date:</b> ${fmtDate}</div>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr><th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:left">Product</th>
         <th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:right">Qty</th>
@@ -566,16 +593,46 @@ async function qtGeneratePdf(){
   const holder=document.createElement('div');
   holder.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:10px';
   holder.appendChild(el); document.body.appendChild(holder);
-  const btn=$('qt-dl'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Preparing...'; }
   try{
     await _loadH2P();
-    // force layout and let fonts/paint settle before html2canvas snapshots it
     el.offsetHeight; await new Promise(r=>setTimeout(r,350));
     await html2pdf().set({ margin:8, filename:'Quotation.pdf', image:{type:'jpeg',quality:0.96},
       html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',x:0,y:0,scrollX:0,scrollY:0,width:760,windowWidth:760},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait',compress:true} }).from(el).save();
   }catch(e){ toast('Could not build PDF — check your connection'); }
-  finally{ holder.remove(); if(btn){ btn.disabled=false; btn.textContent='📄 Download PDF'; } }
+  finally{ holder.remove(); }
+}
+async function qtGeneratePdf(){
+  const rows=_qtRows().filter(r=>r.product && r.qty>0 && r.rate>0);
+  if(!rows.length){ toast('Add at least one item with product, qty and rate'); return; }
+  const meta={ cust:($('qt-cust').value||'').trim()||'—', phone:($('qt-phone').value||'').trim(), date:$('qt-date').value||'' };
+  const fwd=parseFloat($('qt-fwd').value)||0, gst=parseFloat($('qt-gst').value)||0;
+  const items=rows.map(r=>({product:r.product,qty:r.qty,unit:r.unit,rate:r.rate,known:r.known,base:r.base,baseUnit:r.baseUnit,amt:r.amt}));
+  const sub=items.reduce((s,r)=>s+r.amt,0), gstAmt=(sub+fwd)*gst/100, total=sub+fwd+gstAmt;
+  const btn=$('qt-dl'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Preparing...'; }
+  await _qtRenderPdf(meta, items, fwd, gst);
+  // save the quote so the client keeps a history
+  try{ await sbRpc('portal_save_quote',{p_username:CLIENT.u,p_password:CLIENT.p,
+    p_quote_for:meta.cust,p_phone:meta.phone,p_date:meta.date,p_items:items,
+    p_subtotal:sub,p_forwarding:fwd,p_gst_pct:gst,p_gst_total:gstAmt,p_total:total}); qtLoadSaved(); }catch(_){}
+  if(btn){ btn.disabled=false; btn.innerHTML='📄 Download &amp; save quote'; }
+}
+async function qtLoadSaved(){
+  const el=$('qt-saved'); if(!el) return;
+  let rows=[]; try{ rows=await sbRpc('portal_my_quotes',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ el.innerHTML='<div class="empty">No saved quotes yet.</div>'; return; }
+  if(!rows.length){ el.innerHTML='<div class="empty">No saved quotes yet.</div>'; return; }
+  const fmt=d=>{ if(!d)return''; const t=new Date(d); return isNaN(t)?d:t.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); };
+  window._qtSaved={};
+  el.innerHTML=rows.map(q=>{ window._qtSaved[q.id]=q; return `
+    <div class="booking confirmed"><span class="pill pill-green">${_inr(q.total||0)}</span>
+      <div class="b-prod">${q.quote_for||'—'}</div>
+      <div class="b-meta">${fmt(q.qt_date||q.created_at)} · ${(q.items||[]).length} item(s)</div>
+      <button class="btn btn-ghost" style="margin-top:8px;width:100%" onclick="qtDownloadSaved('${q.id}')">📄 Download again</button></div>`; }).join('');
+}
+async function qtDownloadSaved(id){
+  const q=(window._qtSaved||{})[id]; if(!q){ toast('Quote not found'); return; }
+  const meta={ cust:q.quote_for||'—', phone:q.customer_phone||'', date:q.qt_date||q.created_at||'' };
+  await _qtRenderPdf(meta, q.items||[], parseFloat(q.forwarding)||0, parseFloat(q.gst_pct)||0);
 }
 
 // ── My Mechanic: client adds their mechanic for admin approval ──────────────
