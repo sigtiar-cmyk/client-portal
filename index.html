@@ -40,6 +40,19 @@
   .tab{flex:0 0 auto;padding:8px 15px;font-size:13px;font-weight:700;color:var(--text2);cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:20px;white-space:nowrap;user-select:none;-webkit-user-select:none;transition:background .15s,color .15s,border-color .15s}
   .tab.on{color:#06130b;background:var(--green);border-color:var(--green)}
   .content{flex:1;padding:16px 14px 90px}
+  .hero{background:linear-gradient(135deg,var(--accent) 0%,var(--surface2) 90%);border:1px solid var(--border);border-radius:16px;padding:18px 18px;margin-bottom:14px}
+  .hero-greet{font-size:13px;color:#cfe9d8;font-weight:600}
+  .hero-name{font-size:21px;font-weight:800;margin-top:2px;line-height:1.15}
+  .hero-sub{font-size:12px;color:#bfe0cc;margin-top:6px}
+  .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:8px}
+  @media(min-width:620px){.tiles{grid-template-columns:repeat(4,1fr)}}
+  .tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 14px}
+  .tile-v{font-size:21px;font-weight:800;line-height:1}
+  .tile-l{font-size:10.5px;color:var(--text3);margin-top:6px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+  .hrow{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+  .hrow-name{font-weight:700;font-size:14px}
+  .hrow-sub{font-size:11px;color:var(--text3);margin-top:2px}
+  .hrow-qty{font-weight:800;font-size:14px;color:var(--green);white-space:nowrap}
   .group-h{font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin:14px 4px 6px}
   .prod{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
   .prod-name{font-weight:700;font-size:14px}
@@ -95,7 +108,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v11';
+const PORTAL_VER = 'v12';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -124,7 +137,7 @@ let MYCLIENTS = [];      // clients linked to this user (for the Distribute tab)
 let MYPRODUCTS = [];     // product list for distribution entries
 let bookingTarget = null;
 
-function render(){ CLIENT ? renderStock() : renderLogin(); }
+function render(){ CLIENT ? renderHome() : renderLogin(); }
 
 function renderLogin(){
   $('app').innerHTML = `
@@ -285,11 +298,9 @@ function stockRowsHtml(items){
   return list;
 }
 
-function renderStock(){
-  const list=stockRowsHtml(STOCK);
+function _topbarHtml(){
   const initial=((CLIENT.name||'?').trim().charAt(0)||'?').toUpperCase();
-  $('app').innerHTML=`
-    <div class="topbar">
+  return `<div class="topbar">
       <div class="topbar-l">
         <div class="avatar">${initial}</div>
         <div style="min-width:0">
@@ -298,16 +309,66 @@ function renderStock(){
         </div>
       </div>
       <div class="who"><span class="ver">${PORTAL_VER}</span><span class="logout" onclick="logout()">Log out</span></div>
-    </div>
-    <div class="tabs">
-      <div class="tab on" onclick="renderStock()">🏷️ Stock</div>
+    </div>`;
+}
+function _tabsHtml(){
+  return `<div class="tabs">
+      <div class="tab" onclick="renderHome()">🏠 Home</div>
+      <div class="tab" onclick="renderStock()">🏷️ Stock</div>
       <div class="tab" onclick="showMyBookings()">📨 Requests</div>
       <div class="tab" onclick="showMyOrders()">📦 Orders</div>
       <div class="tab" onclick="showMyMechanic()">🔧 Mechanic</div>
       <div class="tab" onclick="showMyClients()">🤝 Clients</div>
       ${(COMMISSION && COMMISSION.total>0) ? '<div class="tab" onclick="showMyCommission()">💰 Commission</div>' : ''}
       ${MYCLIENTS.length ? '<div class="tab" onclick="showDistribute()">🚚 Distribute</div>' : ''}
+    </div>`;
+}
+
+// ── Home / dashboard: welcome + what the client is holding ──────────────────
+async function renderHome(){
+  $('app').innerHTML = _topbarHtml() + _tabsHtml() + '<div class="content" id="home-c"></div>';
+  _activateTab('Home');
+  const c=$('home-c'); if(!c) return;
+  const hr=new Date().getHours();
+  const greet = hr<12?'Good morning':hr<17?'Good afternoon':'Good evening';
+  c.innerHTML = `
+    <div class="hero">
+      <div class="hero-greet">${greet} 👋</div>
+      <div class="hero-name">${CLIENT.name||''}</div>
+      <div class="hero-sub">Here's a quick look at what's with you and what's happening on your account.</div>
     </div>
+    <div id="home-tiles" class="tiles"></div>
+    <div class="group-h">📦 Stock lying with you</div>
+    <div id="home-stock"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>`;
+  // pull delivered orders (what they hold) + open requests
+  let orders=[], bookings=[];
+  try{ orders  = await sbRpc('portal_my_orders',  {p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
+  try{ bookings= await sbRpc('portal_my_bookings',{p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
+  // aggregate delivered material by product + unit
+  const agg={};
+  orders.forEach(o=>{ const name=o.product_name||'-', u=(o.qty_type||'').toLowerCase();
+    const key=name+'|'+u; if(!agg[key]) agg[key]={name,unit:u,qty:0}; agg[key].qty+=parseFloat(o.qty)||0; });
+  const rows=Object.values(agg).filter(r=>r.qty>0).sort((a,b)=>a.name.localeCompare(b.name));
+  // tiles
+  const openReq = bookings.filter(b=>b.status==='requested'||b.status==='available').length;
+  const tiles=[];
+  tiles.push(`<div class="tile"><div class="tile-v">${rows.length}</div><div class="tile-l">Products with you</div></div>`);
+  tiles.push(`<div class="tile"><div class="tile-v">${openReq}</div><div class="tile-l">Open requests</div></div>`);
+  if(COMMISSION && COMMISSION.total>0) tiles.push(`<div class="tile" onclick="showMyCommission()" style="cursor:pointer"><div class="tile-v" style="color:var(--green)">${_inr(COMMISSION.available||0)}</div><div class="tile-l">Commission ready</div></div>`);
+  if(MYCLIENTS.length) tiles.push(`<div class="tile" onclick="showMyClients()" style="cursor:pointer"><div class="tile-v">${MYCLIENTS.length}</div><div class="tile-l">Your clients</div></div>`);
+  const tEl=$('home-tiles'); if(tEl) tEl.innerHTML=tiles.join('');
+  // stock-with-you list
+  const sEl=$('home-stock'); if(sEl){
+    sEl.innerHTML = rows.length ? rows.map(r=>`
+      <div class="hrow"><div><div class="hrow-name">${r.name}</div><div class="hrow-sub">Received from us</div></div>
+        <div class="hrow-qty">${(Math.round(r.qty*100)/100)} ${r.unit||''}</div></div>`).join('')
+      : '<div class="empty">No delivered material yet. Browse the Stock tab to request some.</div>';
+  }
+}
+
+function renderStock(){
+  const list=stockRowsHtml(STOCK);
+  $('app').innerHTML = _topbarHtml() + _tabsHtml() + `
     <div class="content">
       <div style="display:flex;gap:8px;margin-bottom:14px">
         <input style="flex:1;margin:0" placeholder="🔍 Search material..." oninput="filterStock(this.value)"/>
@@ -315,6 +376,7 @@ function renderStock(){
       </div>
       <div id="stock-list">${list||('<div class="empty">No stock available right now.'+(window._stockErr?'<br><br><span style="color:var(--text3);font-size:11px">'+window._stockErr+'</span>':'')+'</div>')}</div>
     </div>`;
+  _activateTab('Stock');
 }
 
 function filterStock(q){
@@ -563,7 +625,7 @@ async function submitDistribution(){
 
 // "My Requests" — requested → available (Book) → booked. Status-aware.
 async function showMyBookings(){
-  _switchTab(1);
+  _activateTab("Requests");
   const box=$('app').querySelector('.content');
   box.innerHTML='<div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div>';
   let rows=[];
@@ -588,7 +650,7 @@ async function showMyBookings(){
 
 // "My Orders" — sales orders delivered to this client.
 async function showMyOrders(){
-  _switchTab(2);
+  _activateTab("Orders");
   const box=$('app').querySelector('.content');
   box.innerHTML='<div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div>';
   let rows=[];
