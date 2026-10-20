@@ -108,7 +108,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v14';
+const PORTAL_VER = 'v15';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -569,8 +569,10 @@ async function qtGeneratePdf(){
   const btn=$('qt-dl'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Preparing...'; }
   try{
     await _loadH2P();
+    // force layout and let fonts/paint settle before html2canvas snapshots it
+    el.offsetHeight; await new Promise(r=>setTimeout(r,350));
     await html2pdf().set({ margin:8, filename:'Quotation.pdf', image:{type:'jpeg',quality:0.96},
-      html2canvas:{scale:2,backgroundColor:'#ffffff',width:760,windowWidth:760},
+      html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',x:0,y:0,scrollX:0,scrollY:0,width:760,windowWidth:760},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait',compress:true} }).from(el).save();
   }catch(e){ toast('Could not build PDF — check your connection'); }
   finally{ holder.remove(); if(btn){ btn.disabled=false; btn.textContent='📄 Download PDF'; } }
