@@ -88,7 +88,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v6';
+const PORTAL_VER = 'v7';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -360,6 +360,7 @@ async function showDistribute(){
   const clientOpts = MYCLIENTS.map(c=>`<option value="${c.client_id}">${c.client_name||'-'}</option>`).join('');
   const prodOpts = MYPRODUCTS.map(p=>`<option value="${p.product_id}">${p.product_name||'-'}</option>`).join('');
   box.innerHTML = `
+    <div id="ds-dues"></div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
       <div style="font-weight:700;margin-bottom:4px">Log a distribution</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Record material you passed on to one of your clients. We review it before it counts toward commission.</div>
@@ -375,6 +376,34 @@ async function showDistribute(){
     </div>
     <div id="ds-history"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>`;
   loadDistHistory();
+  loadMechDues();
+}
+// What this reseller owes their clients' mechanics/referrers on approved resale distributions.
+async function loadMechDues(){
+  const el=$('ds-dues'); if(!el) return;
+  let rows=[];
+  try{ rows = await sbRpc('portal_mechanic_dues',{p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){ el.innerHTML=''; return; }
+  if(!rows.length){ el.innerHTML=''; return; }
+  const agg={}; let total=0;
+  rows.forEach(r=>{
+    const unit=(r.incentive_unit==='pcs')?'pcs':'kg';
+    const vol=unit==='pcs'?_cmPcs(r):_cmKg(r);
+    const rate=parseFloat(r.rate)||0, cut=parseFloat(r.cut_pct)||0;
+    const amt=rate*vol*(1-cut/100);
+    const k=r.payee_name||'-';
+    agg[k]=(agg[k]||0)+amt; total+=amt;
+  });
+  if(total<=0){ el.innerHTML=''; return; }
+  const lines=Object.keys(agg).sort().map(k=>`
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span>🔧 ${k}</span><span style="font-weight:700">${_inr(agg[k])}</span></div>`).join('');
+  el.innerHTML=`
+    <div style="background:rgba(245,158,11,.12);border:1px solid var(--amber);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:700;margin-bottom:2px">You owe your clients' mechanics</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Commission on material you resold to clients who have a mechanic. Payable by you.</div>
+      ${lines}
+      <div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:15px"><span>Total you owe</span><span style="color:var(--amber)">${_inr(total)}</span></div>
+    </div>`;
 }
 async function loadDistHistory(){
   const el=$('ds-history'); if(!el) return;
