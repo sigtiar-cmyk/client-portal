@@ -13,10 +13,16 @@
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
   .wrap{max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
-  .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:20}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:linear-gradient(180deg,var(--surface) 0%,var(--bg) 100%);z-index:20}
   .brand{font-weight:800;font-size:16px;letter-spacing:.5px}
   .brand span{color:var(--green)}
-  .who{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px}
+  .topbar-l{display:flex;align-items:center;gap:11px;min-width:0}
+  .avatar{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--green),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:#06130b;flex-shrink:0}
+  .topbar-name{font-weight:800;font-size:15px;line-height:1.15;max-width:52vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .topbar-sub{font-size:10px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;margin-top:1px}
+  .who{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:9px}
+  .ver{font-size:9px;color:var(--text3);border:1px solid var(--border);border-radius:8px;padding:1px 6px}
+  .logout{color:var(--green);cursor:pointer;font-weight:700;font-size:12px}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
   .login{flex:1;display:flex;flex-direction:column;justify-content:center;padding:30px 24px;gap:14px}
   .login h1{font-size:22px;font-weight:800}
@@ -29,10 +35,11 @@
   .btn:active{transform:scale(.98)}
   .btn:disabled{opacity:.6}
   .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
-  .tabs{display:flex;border-bottom:1px solid var(--border);position:sticky;top:53px;background:var(--bg);z-index:10}
-  .tab{flex:1;text-align:center;padding:12px;font-size:13px;font-weight:700;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent}
-  .tab.on{color:var(--green);border-bottom-color:var(--green)}
-  .content{flex:1;padding:14px 14px 90px}
+  .tabs{display:flex;gap:8px;overflow-x:auto;padding:11px 14px;position:sticky;top:64px;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex:0 0 auto;padding:8px 15px;font-size:13px;font-weight:700;color:var(--text2);cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:20px;white-space:nowrap;transition:background .15s,color .15s,border-color .15s}
+  .tab.on{color:#06130b;background:var(--green);border-color:var(--green)}
+  .content{flex:1;padding:16px 14px 90px}
   .group-h{font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin:14px 4px 6px}
   .prod{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
   .prod-name{font-weight:700;font-size:14px}
@@ -88,7 +95,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v9';
+const PORTAL_VER = 'v10';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -122,13 +129,14 @@ function render(){ CLIENT ? renderStock() : renderLogin(); }
 function renderLogin(){
   $('app').innerHTML = `
     <div class="topbar"><div class="brand">SHRI <span>K N</span> PAPERS</div>
-      <span style="font-size:10px;color:var(--text3);border:1px solid var(--border);border-radius:10px;padding:1px 7px">${PORTAL_VER}</span></div>
+      <span class="ver">${PORTAL_VER}</span></div>
     <div class="login">
+      <div class="avatar" style="width:56px;height:56px;border-radius:16px;font-size:24px;margin-bottom:6px">KN</div>
       <h1>Client <span>Portal</span></h1>
-      <p>Sign in to see available stock and book material. Your booking reaches us directly.</p>
+      <p>Sign in to see available stock, book material, and track your commission. Everything reaches us directly.</p>
       <div><label>Username</label><input id="lg-user" placeholder="username" autocomplete="off"/></div>
       <div><label>Password</label><input id="lg-pass" type="password" placeholder="••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
-      <button class="btn" id="lg-btn" onclick="doLogin()">Sign in</button>
+      <button class="btn" id="lg-btn" style="margin-top:4px" onclick="doLogin()">Sign in →</button>
     </div>`;
 }
 
@@ -279,22 +287,29 @@ function stockRowsHtml(items){
 
 function renderStock(){
   const list=stockRowsHtml(STOCK);
+  const initial=((CLIENT.name||'?').trim().charAt(0)||'?').toUpperCase();
   $('app').innerHTML=`
     <div class="topbar">
-      <div class="brand" style="max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${CLIENT.name}</div>
-      <div class="who"><span style="color:var(--text3);font-size:10px;border:1px solid var(--border);border-radius:10px;padding:1px 6px">${PORTAL_VER}</span><span class="dot"></span><span onclick="logout()" style="color:var(--green);cursor:pointer;font-weight:600">Log out</span></div>
+      <div class="topbar-l">
+        <div class="avatar">${initial}</div>
+        <div style="min-width:0">
+          <div class="topbar-name">${CLIENT.name||''}</div>
+          <div class="topbar-sub">K N Papers · Client Portal</div>
+        </div>
+      </div>
+      <div class="who"><span class="ver">${PORTAL_VER}</span><span class="logout" onclick="logout()">Log out</span></div>
     </div>
     <div class="tabs">
-      <div class="tab on" onclick="renderStock()">Stock</div>
-      <div class="tab" onclick="showMyBookings()">My Requests</div>
-      <div class="tab" onclick="showMyOrders()">My Orders</div>
-      <div class="tab" onclick="showMyMechanic()">My Mechanic</div>
-      <div class="tab" onclick="showMyClients()">My Clients</div>
-      ${(COMMISSION && COMMISSION.total>0) ? '<div class="tab" onclick="showMyCommission()">Commission</div>' : ''}
-      ${MYCLIENTS.length ? '<div class="tab" onclick="showDistribute()">Distribute</div>' : ''}
+      <div class="tab on" onclick="renderStock()">🏷️ Stock</div>
+      <div class="tab" onclick="showMyBookings()">📨 Requests</div>
+      <div class="tab" onclick="showMyOrders()">📦 Orders</div>
+      <div class="tab" onclick="showMyMechanic()">🔧 Mechanic</div>
+      <div class="tab" onclick="showMyClients()">🤝 Clients</div>
+      ${(COMMISSION && COMMISSION.total>0) ? '<div class="tab" onclick="showMyCommission()">💰 Commission</div>' : ''}
+      ${MYCLIENTS.length ? '<div class="tab" onclick="showDistribute()">🚚 Distribute</div>' : ''}
     </div>
     <div class="content">
-      <div style="display:flex;gap:8px;margin-bottom:12px">
+      <div style="display:flex;gap:8px;margin-bottom:14px">
         <input style="flex:1;margin:0" placeholder="🔍 Search material..." oninput="filterStock(this.value)"/>
         <button class="btn" style="white-space:nowrap;padding:12px 14px" onclick="openStockSheet()">📄 Sheet</button>
       </div>
@@ -352,12 +367,12 @@ function _switchTab(idx){
 }
 function _activateTab(label){
   const tabs=$('app').querySelectorAll('.tab');
-  tabs.forEach(t=>t.classList.toggle('on', t.textContent.trim()===label));
+  tabs.forEach(t=>t.classList.toggle('on', t.textContent.indexOf(label)>-1));
 }
 
 // ── My Mechanic: client adds their mechanic for admin approval ──────────────
 async function showMyMechanic(){
-  _activateTab('My Mechanic');
+  _activateTab('Mechanic');
   const box=$('app').querySelector('.content');
   box.innerHTML='<div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div>';
   let res=[];
@@ -409,7 +424,7 @@ async function submitMechanic(){
 
 // ── My Clients: referrer adds the clients they introduce (for admin approval) ─
 async function showMyClients(){
-  _activateTab('My Clients');
+  _activateTab('Clients');
   const box=$('app').querySelector('.content');
   box.innerHTML = `
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
@@ -602,7 +617,7 @@ async function requestPayout(){
 
 // "Commission" — referral earnings from clients this client introduced.
 function showMyCommission(){
-  _switchTab(3);
+  _activateTab('Commission');
   const box=$('app').querySelector('.content');
   if(!COMMISSION || !COMMISSION.total){ box.innerHTML='<div class="empty">No referral commission yet.</div>'; return; }
   const volDisp = a => a.unit==='pcs' ? (Math.round(a.vol)+' pc') : (Math.round(a.vol)+' kg');
