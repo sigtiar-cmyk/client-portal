@@ -57,6 +57,7 @@
   .dcard-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;gap:8px}
   .dbadge{font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(34,197,94,.15);color:var(--green);white-space:nowrap}
   .dcard-date{font-size:11px;color:var(--text3);white-space:nowrap}
+  .dcard-name{font-weight:800;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dc-line{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:13.5px;border-top:1px solid var(--border)}
   .dc-line:first-of-type{border-top:none}
   .dc-line .nm{font-weight:600}
@@ -116,7 +117,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v19';
+const PORTAL_VER = 'v22';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -346,9 +347,15 @@ async function renderHome(){
       <div class="hero-sub">Here's a quick look at what's with you and what's happening on your account.</div>
     </div>
     <div id="home-tiles" class="tiles"></div>
-    <div class="group-h">🚚 Recently dispatched</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 4px 6px">
+      <span style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px">🚚 Latest dispatch</span>
+      <span onclick="showMaterial('ord')" style="font-size:11px;color:var(--text3);cursor:pointer">View all ›</span>
+    </div>
     <div id="home-dispatch"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>
-    <div class="group-h" style="margin-top:18px">📦 Stock lying with you</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 4px 6px">
+      <span style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px">📦 Stock lying with you</span>
+      <button class="btn btn-ghost" id="home-stock-dl" style="padding:5px 11px;font-size:11px" onclick="homeStockPdf()">📄 Download list</button>
+    </div>
     <div id="home-stock"></div>`;
   // pull delivered orders (what they hold) + open requests
   let orders=[], bookings=[];
@@ -367,15 +374,46 @@ async function renderHome(){
   if(COMMISSION && COMMISSION.total>0) tiles.push(`<div class="tile" onclick="showMyCommission()" style="cursor:pointer"><div class="tile-v" style="color:var(--green)">${_inr(COMMISSION.available||0)}</div><div class="tile-l">Commission ready</div></div>`);
   if(MYCLIENTS.length) tiles.push(`<div class="tile" onclick="showMyClients()" style="cursor:pointer"><div class="tile-v">${MYCLIENTS.length}</div><div class="tile-l">Your clients</div></div>`);
   const tEl=$('home-tiles'); if(tEl) tEl.innerHTML=tiles.join('');
-  // recently dispatched — grouped delivery cards, newest first (last 4 dispatches)
-  const dEl=$('home-dispatch'); if(dEl) dEl.innerHTML=_dispatchCards(orders,4);
-  // stock-with-you list
+  // latest dispatch only — the newest delivery date (the rest live in My Orders)
+  const dEl=$('home-dispatch'); if(dEl) dEl.innerHTML=_dispatchCards(orders,1);
+  // stock-with-you list (full holdings) + keep for the PDF download
+  _homeStockRows = rows;
   const sEl=$('home-stock'); if(sEl){
     sEl.innerHTML = rows.length ? rows.map(r=>`
       <div class="hrow"><div><div class="hrow-name">${r.name}</div><div class="hrow-sub">Received from us</div></div>
         <div class="hrow-qty">${(Math.round(r.qty*100)/100)} ${r.unit||''}</div></div>`).join('')
-      : '<div class="empty">No delivered material yet. Browse the Stock tab to request some.</div>';
+      : '<div class="empty">No delivered material yet. Browse Material → Stock to request some.</div>';
   }
+}
+let _homeStockRows=[];
+async function homeStockPdf(){
+  if(!_homeStockRows.length){ toast('No stock to download'); return; }
+  const fmtDate=new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+  const bd='border:1px solid #bbb;padding:7px 9px', bdr=bd+';text-align:right';
+  const lines=_homeStockRows.map(r=>`<tr><td style="${bd}">${r.name}</td><td style="${bdr}">${Math.round(r.qty*100)/100} ${r.unit||''}</td></tr>`).join('');
+  const el=document.createElement('div');
+  el.style.cssText='width:760px;background:#fff;color:#111;padding:26px;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box';
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #166534;padding-bottom:10px">
+      <div style="font-size:21px;font-weight:800;color:#166534">${CLIENT.name||''}</div>
+      <div style="font-size:18px;font-weight:800;color:#777;letter-spacing:1px">STOCK LIST</div></div>
+    <div style="margin:12px 0;font-size:12px;color:#555"><b>As on:</b> ${fmtDate}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr><th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:left">Product</th>
+        <th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:right">Quantity</th></tr></thead>
+      <tbody>${lines}</tbody></table>`;
+  const holder=document.createElement('div');
+  holder.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:10px';
+  holder.appendChild(el); document.body.appendChild(holder);
+  const btn=$('home-stock-dl'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span>'; }
+  try{
+    await _loadH2P();
+    el.offsetHeight; await new Promise(r=>setTimeout(r,350));
+    await html2pdf().set({ margin:8, filename:'Stock-list.pdf', image:{type:'jpeg',quality:0.96},
+      html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',x:0,y:0,scrollX:0,scrollY:0,width:760,windowWidth:760},
+      jsPDF:{unit:'mm',format:'a4',orientation:'portrait',compress:true} }).from(el).save();
+  }catch(e){ toast('Could not build PDF — check your connection'); }
+  finally{ holder.remove(); if(btn){ btn.disabled=false; btn.innerHTML='📄 Download list'; } }
 }
 
 function renderStock(){
@@ -453,10 +491,11 @@ async function showQuote(){
   const box=$('app').querySelector('.content');
   box.innerHTML = `
     <datalist id="qt-prodlist"></datalist>
+    <datalist id="qt-custlist"></datalist>
     <div class="group-h">New quotation</div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
       <label>Quote for (your customer)</label>
-      <input id="qt-cust" placeholder="Customer name"/>
+      <input id="qt-cust" list="qt-custlist" placeholder="Type a name, or pick your client"/>
       <div style="display:flex;gap:10px;margin-top:10px">
         <div style="flex:1"><label>Phone (optional)</label><input id="qt-phone" inputmode="tel" placeholder="Mobile"/></div>
         <div style="flex:1"><label>Date</label><input id="qt-date" type="date"/></div>
@@ -481,6 +520,9 @@ async function showQuote(){
   if(!QT_PRODUCTS.length){
     try{ QT_PRODUCTS = await sbRpc('portal_quote_products',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ QT_PRODUCTS=[]; }
   }
+  // offer the client's own clients in the "Quote for" field (they can still type any name)
+  if(!MYCLIENTS.length){ try{ await loadDistData(); }catch(_){} }
+  const cl=$('qt-custlist'); if(cl) cl.innerHTML=(MYCLIENTS||[]).map(c=>`<option value="${(c.client_name||'').replace(/"/g,'&quot;')}">`).join('');
   await _qtLoadMyProducts();
   _qtBuildInfo(); _qtRefreshDatalist();
   qtAddRow(); qtRecalc();
@@ -943,9 +985,11 @@ function _dispatchCards(orders, limitGroups){
   let keys=Object.keys(groups).sort((a,b)=>String(b).localeCompare(String(a)));
   if(limitGroups) keys=keys.slice(0,limitGroups);
   if(!keys.length) return '<div class="empty">No dispatches yet.</div>';
+  const who = (CLIENT && CLIENT.name) || '';
   return keys.map(k=>`
     <div class="dcard">
-      <div class="dcard-h"><span class="dbadge">✓ Delivered</span><span class="dcard-date">🚚 ${fmtD(k)}</span></div>
+      <div class="dcard-h"><span class="dcard-name">${who}</span><span class="dbadge">✓ Delivered</span></div>
+      <div class="dcard-date" style="margin:-4px 0 9px">🚚 Dispatched ${fmtD(k)}</div>
       ${groups[k].map(o=>`<div class="dc-line"><span class="nm">${o.product_name||'-'}</span><span class="q">${o.qty||''} ${ushort(o.qty_type)}</span></div>`).join('')}
     </div>`).join('');
 }
