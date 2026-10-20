@@ -117,7 +117,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v22';
+const PORTAL_VER = 'v23';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -348,24 +348,31 @@ async function renderHome(){
     </div>
     <div id="home-tiles" class="tiles"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 4px 6px">
-      <span style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px">🚚 Latest dispatch</span>
+      <span style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px">📦 Latest material received</span>
       <span onclick="showMaterial('ord')" style="font-size:11px;color:var(--text3);cursor:pointer">View all ›</span>
     </div>
     <div id="home-dispatch"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 4px 6px">
-      <span style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px">📦 Stock lying with you</span>
+      <span style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px">📊 Stock lying with you</span>
       <button class="btn btn-ghost" id="home-stock-dl" style="padding:5px 11px;font-size:11px" onclick="homeStockPdf()">📄 Download list</button>
     </div>
     <div id="home-stock"></div>`;
-  // pull delivered orders (what they hold) + open requests
-  let orders=[], bookings=[];
-  try{ orders  = await sbRpc('portal_my_orders',  {p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
-  try{ bookings= await sbRpc('portal_my_bookings',{p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
-  // aggregate delivered material by product + unit
-  const agg={};
+  // received from us (orders) + open requests + what they've dispatched out (distributions)
+  let orders=[], bookings=[], dists=[];
+  try{ orders  = await sbRpc('portal_my_orders',       {p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
+  try{ bookings= await sbRpc('portal_my_bookings',     {p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
+  try{ dists   = await sbRpc('portal_my_distributions',{p_username:CLIENT.u,p_password:CLIENT.p}) || []; }catch(_){}
+  // received by product+unit
+  const recv={};
   orders.forEach(o=>{ const name=o.product_name||'-', u=(o.qty_type||'').toLowerCase();
-    const key=name+'|'+u; if(!agg[key]) agg[key]={name,unit:u,qty:0}; agg[key].qty+=parseFloat(o.qty)||0; });
-  const rows=Object.values(agg).filter(r=>r.qty>0).sort((a,b)=>a.name.localeCompare(b.name));
+    const key=name+'|'+u; if(!recv[key]) recv[key]={name,unit:u,qty:0}; recv[key].qty+=parseFloat(o.qty)||0; });
+  // dispatched out = APPROVED distributions (status Delivered), by product+unit
+  const disp={};
+  dists.filter(d=>d.status==='Delivered').forEach(d=>{ const name=d.product_name||'-', u=(d.qty_type||'').toLowerCase();
+    disp[name+'|'+u]=(disp[name+'|'+u]||0)+(parseFloat(d.qty)||0); });
+  // stock = received − dispatched
+  const rows=Object.values(recv).map(r=>({ name:r.name, unit:r.unit, qty:r.qty-(disp[r.name+'|'+r.unit]||0) }))
+    .filter(r=>Math.round(r.qty*100)/100>0).sort((a,b)=>a.name.localeCompare(b.name));
   // tiles
   const openReq = bookings.filter(b=>b.status==='requested'||b.status==='available').length;
   const tiles=[];
@@ -374,15 +381,15 @@ async function renderHome(){
   if(COMMISSION && COMMISSION.total>0) tiles.push(`<div class="tile" onclick="showMyCommission()" style="cursor:pointer"><div class="tile-v" style="color:var(--green)">${_inr(COMMISSION.available||0)}</div><div class="tile-l">Commission ready</div></div>`);
   if(MYCLIENTS.length) tiles.push(`<div class="tile" onclick="showMyClients()" style="cursor:pointer"><div class="tile-v">${MYCLIENTS.length}</div><div class="tile-l">Your clients</div></div>`);
   const tEl=$('home-tiles'); if(tEl) tEl.innerHTML=tiles.join('');
-  // latest dispatch only — the newest delivery date (the rest live in My Orders)
+  // latest received delivery (the rest live in Material → My Orders)
   const dEl=$('home-dispatch'); if(dEl) dEl.innerHTML=_dispatchCards(orders,1);
-  // stock-with-you list (full holdings) + keep for the PDF download
+  // stock = received − dispatched + keep for the PDF download
   _homeStockRows = rows;
   const sEl=$('home-stock'); if(sEl){
     sEl.innerHTML = rows.length ? rows.map(r=>`
-      <div class="hrow"><div><div class="hrow-name">${r.name}</div><div class="hrow-sub">Received from us</div></div>
+      <div class="hrow"><div><div class="hrow-name">${r.name}</div><div class="hrow-sub">Received − dispatched</div></div>
         <div class="hrow-qty">${(Math.round(r.qty*100)/100)} ${r.unit||''}</div></div>`).join('')
-      : '<div class="empty">No delivered material yet. Browse Material → Stock to request some.</div>';
+      : '<div class="empty">No stock with you right now.</div>';
   }
 }
 let _homeStockRows=[];
@@ -989,7 +996,7 @@ function _dispatchCards(orders, limitGroups){
   return keys.map(k=>`
     <div class="dcard">
       <div class="dcard-h"><span class="dcard-name">${who}</span><span class="dbadge">✓ Delivered</span></div>
-      <div class="dcard-date" style="margin:-4px 0 9px">🚚 Dispatched ${fmtD(k)}</div>
+      <div class="dcard-date" style="margin:-4px 0 9px">📦 Received ${fmtD(k)}</div>
       ${groups[k].map(o=>`<div class="dc-line"><span class="nm">${o.product_name||'-'}</span><span class="q">${o.qty||''} ${ushort(o.qty_type)}</span></div>`).join('')}
     </div>`).join('');
 }
