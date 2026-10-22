@@ -117,7 +117,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v23';
+const PORTAL_VER = 'v27';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -348,10 +348,10 @@ async function renderHome(){
     </div>
     <div id="home-tiles" class="tiles"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 4px 6px">
-      <span style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px">📦 Latest material received</span>
-      <span onclick="showMaterial('ord')" style="font-size:11px;color:var(--text3);cursor:pointer">View all ›</span>
+      <span style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px">💰 Today's sales</span>
+      <span onclick="showDistribute()" style="font-size:11px;color:var(--text3);cursor:pointer">Log a sale ›</span>
     </div>
-    <div id="home-dispatch"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>
+    <div id="home-today"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 4px 6px">
       <span style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:1px">📊 Stock lying with you</span>
       <button class="btn btn-ghost" id="home-stock-dl" style="padding:5px 11px;font-size:11px" onclick="homeStockPdf()">📄 Download list</button>
@@ -381,8 +381,23 @@ async function renderHome(){
   if(COMMISSION && COMMISSION.total>0) tiles.push(`<div class="tile" onclick="showMyCommission()" style="cursor:pointer"><div class="tile-v" style="color:var(--green)">${_inr(COMMISSION.available||0)}</div><div class="tile-l">Commission ready</div></div>`);
   if(MYCLIENTS.length) tiles.push(`<div class="tile" onclick="showMyClients()" style="cursor:pointer"><div class="tile-v">${MYCLIENTS.length}</div><div class="tile-l">Your clients</div></div>`);
   const tEl=$('home-tiles'); if(tEl) tEl.innerHTML=tiles.join('');
-  // latest received delivery (the rest live in Material → My Orders)
-  const dEl=$('home-dispatch'); if(dEl) dEl.innerHTML=_dispatchCards(orders,1);
+  // today's sales = the distributions they logged today (what they sold to their clients)
+  const _t=new Date(); const tStr=_t.getFullYear()+'-'+String(_t.getMonth()+1).padStart(2,'0')+'-'+String(_t.getDate()).padStart(2,'0');
+  const ush = u => { u=(u||'').toLowerCase(); return u==='bundles'?'bdl':u==='packets'?'pkt':u==='sheets'?'sh':u==='reams'?'rm':u==='pcs'?'pc':u; };
+  const todaySales = (dists||[]).filter(d=>String(d.order_date||'').slice(0,10)===tStr);
+  const tdEl=$('home-today');
+  if(tdEl){
+    if(!todaySales.length){ tdEl.innerHTML='<div class="empty">No sales logged today. Tap "Log a sale" to add one.</div>'; }
+    else {
+      const sPill = s => s==='Delivered'?'<span class="dbadge">✓ Approved</span>'
+        : s==='Cancelled'?'<span class="dbadge" style="background:rgba(239,68,68,.15);color:var(--red)">Rejected</span>'
+        : '<span class="dbadge" style="background:rgba(217,119,6,.15);color:var(--amber)">In review</span>';
+      tdEl.innerHTML=`<div class="dcard">
+        <div class="dcard-h"><span class="dcard-name">${todaySales.length} sale${todaySales.length>1?'s':''} today</span><span class="dcard-date">${_t.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span></div>
+        ${todaySales.map(d=>`<div class="dc-line"><span class="nm">${d.product_name||'-'} → ${d.end_client_name||'-'}</span><span class="q" style="display:flex;align-items:center;gap:8px">${d.qty||''} ${ush(d.qty_type)} ${sPill(d.status)}</span></div>`).join('')}
+      </div>`;
+    }
+  }
   // stock = received − dispatched + keep for the PDF download
   _homeStockRows = rows;
   const sEl=$('home-stock'); if(sEl){
@@ -492,16 +507,38 @@ function _activateTab(label){
 // ── Quote: client builds a quotation for their own customer ─────────────────
 // Known K N products auto-convert bundles→kg / pieces via the bundle master;
 // the client can also type any product we don't deal with (free text).
-let QT_PRODUCTS=[]; let _qtInfo={}; let _qtSeq=0;
+let QT_PRODUCTS=[]; let _qtInfo={}; let _qtSeq=0; let _qtMode='quote'; let _qtSavedList=[];
+function qtSetMode(mode){
+  _qtMode = mode==='invoice' ? 'invoice' : 'quote';
+  const inv=_qtMode==='invoice';
+  const qb=$('qm-quote'), ib=$('qm-inv');
+  if(qb){ qb.style.background=inv?'transparent':'var(--green)'; qb.style.color=inv?'var(--text)':'#06130b'; }
+  if(ib){ ib.style.background=inv?'var(--green)':'transparent'; ib.style.color=inv?'#06130b':'var(--text)'; }
+  if($('qt-doc-title')) $('qt-doc-title').textContent = inv?'New invoice':'New quotation';
+  if($('qt-cust-label')) $('qt-cust-label').textContent = inv?'Bill to (your customer)':'Quote for (your customer)';
+  if($('qt-dl')) $('qt-dl').innerHTML = inv?'📄 Download &amp; save invoice':'📄 Download &amp; save quote';
+  if($('qt-saved-title')) $('qt-saved-title').textContent = inv?'Saved invoices':'Saved quotes';
+  qtLoadSaved();
+}
+// Random, always-climbing document number so it reads like a well-used system.
+function _qtNextNo(list, key){
+  const nos=(list||[]).map(d=>parseInt(d[key])||0).filter(n=>n>0);
+  const max=nos.length?Math.max.apply(null,nos):0;
+  return max ? (max + 20 + Math.floor(Math.random()*55)) : (100 + Math.floor(Math.random()*150));
+}
 async function showQuote(){
   _activateTab('Quote');
   const box=$('app').querySelector('.content');
   box.innerHTML = `
     <datalist id="qt-prodlist"></datalist>
     <datalist id="qt-custlist"></datalist>
-    <div class="group-h">New quotation</div>
+    <div style="display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:3px;margin-bottom:14px">
+      <button class="btn btn-sm" id="qm-quote" onclick="qtSetMode('quote')" style="border-radius:8px">📝 Quotation</button>
+      <button class="btn btn-sm" id="qm-inv" onclick="qtSetMode('invoice')" style="border-radius:8px;background:transparent;color:var(--text)">🧾 Invoice</button>
+    </div>
+    <div class="group-h" id="qt-doc-title">New quotation</div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
-      <label>Quote for (your customer)</label>
+      <label id="qt-cust-label">Quote for (your customer)</label>
       <input id="qt-cust" list="qt-custlist" placeholder="Type a name, or pick your client"/>
       <div style="display:flex;gap:10px;margin-top:10px">
         <div style="flex:1"><label>Phone (optional)</label><input id="qt-phone" inputmode="tel" placeholder="Mobile"/></div>
@@ -521,8 +558,9 @@ async function showQuote(){
     </div>
     <button class="btn" id="qt-dl" style="width:100%" onclick="qtGeneratePdf()">📄 Download &amp; save quote</button>
 
-    <div class="group-h" style="margin-top:20px">Saved quotes</div>
+    <div class="group-h" style="margin-top:20px" id="qt-saved-title">Saved quotes</div>
     <div id="qt-saved"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>`;
+  qtSetMode(_qtMode);
   $('qt-date').value=new Date().toISOString().split('T')[0];
   if(!QT_PRODUCTS.length){
     try{ QT_PRODUCTS = await sbRpc('portal_quote_products',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ QT_PRODUCTS=[]; }
@@ -533,7 +571,6 @@ async function showQuote(){
   await _qtLoadMyProducts();
   _qtBuildInfo(); _qtRefreshDatalist();
   qtAddRow(); qtRecalc();
-  qtLoadSaved();
 }
 let MY_PRODUCTS=[];   // [{name, incentive_unit, bundle_wt, packet_wt, num_packets, sheets_per_packet}]
 async function _qtLoadMyProducts(){ try{ MY_PRODUCTS = await sbRpc('portal_my_products',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ MY_PRODUCTS=[]; } }
@@ -616,13 +653,18 @@ async function _qtRenderPdf(meta, items, fwd, gst){
     return `<tr><td style="${bd}">${r.product}</td><td style="${bdr}">${qtyCell}</td><td style="${bdr}">${rateCell}</td><td style="${bdr}">${inr(r.amt)}</td></tr>`; }).join('');
   const taxable=sub+fwd, gstAmt=taxable*gst/100, total=taxable+gstAmt;
   const fmtDate = meta.date? new Date(meta.date).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '';
+  const inv = meta.docType==='invoice';
+  const docTitle = inv?'TAX INVOICE':'QUOTATION';
+  const noLabel = inv?'Invoice No':'Quotation No';
+  const toLabel = inv?'Bill to':'Quote for';
   const el=document.createElement('div');
   el.style.cssText='width:760px;background:#fff;color:#111;padding:26px;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box';
   el.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #166534;padding-bottom:10px">
       <div style="font-size:21px;font-weight:800;color:#166534">${CLIENT.name||''}</div>
-      <div style="font-size:23px;font-weight:800;color:#777;letter-spacing:1px">QUOTATION</div></div>
-    <div style="margin:12px 0;font-size:13px;color:#333;line-height:1.6"><b>Quote for:</b> ${meta.cust||'—'}${meta.phone?' · '+meta.phone:''}<br><b>Date:</b> ${fmtDate}</div>
+      <div style="text-align:right"><div style="font-size:23px;font-weight:800;color:#777;letter-spacing:1px">${docTitle}</div>
+        ${meta.docNo?`<div style="font-size:12px;color:#444;margin-top:2px;font-weight:700">${noLabel}: ${meta.docNo}</div>`:''}</div></div>
+    <div style="margin:12px 0;font-size:13px;color:#333;line-height:1.6"><b>${toLabel}:</b> ${meta.cust||'—'}${meta.phone?' · '+meta.phone:''}<br><b>Date:</b> ${fmtDate}</div>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr><th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:left">Product</th>
         <th style="border:1px solid #bbb;padding:7px 9px;background:#f0f7f2;text-align:right">Qty</th>
@@ -641,7 +683,7 @@ async function _qtRenderPdf(meta, items, fwd, gst){
   try{
     await _loadH2P();
     el.offsetHeight; await new Promise(r=>setTimeout(r,350));
-    await html2pdf().set({ margin:8, filename:'Quotation.pdf', image:{type:'jpeg',quality:0.96},
+    await html2pdf().set({ margin:8, filename:(inv?'Invoice':'Quotation')+(meta.docNo?'-'+meta.docNo:'')+'.pdf', image:{type:'jpeg',quality:0.96},
       html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',x:0,y:0,scrollX:0,scrollY:0,width:760,windowWidth:760},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait',compress:true} }).from(el).save();
   }catch(e){ toast('Could not build PDF — check your connection'); }
@@ -650,33 +692,46 @@ async function _qtRenderPdf(meta, items, fwd, gst){
 async function qtGeneratePdf(){
   const rows=_qtRows().filter(r=>r.product && r.qty>0 && r.rate>0);
   if(!rows.length){ toast('Add at least one item with product, qty and rate'); return; }
-  const meta={ cust:($('qt-cust').value||'').trim()||'—', phone:($('qt-phone').value||'').trim(), date:$('qt-date').value||'' };
+  const inv=_qtMode==='invoice';
+  // Invoices run a real sequential series (1, 2, 3 …); quotes get the random climbing number.
+  let docNo;
+  if(inv){ const nos=(_qtSavedList||[]).map(d=>parseInt(d.invoice_no)||0); docNo=(nos.length?Math.max.apply(null,nos):0)+1; }
+  else { docNo=_qtNextNo(_qtSavedList, 'quote_no'); }
+  const meta={ cust:($('qt-cust').value||'').trim()||'—', phone:($('qt-phone').value||'').trim(), date:$('qt-date').value||'', docType:_qtMode, docNo };
   const fwd=parseFloat($('qt-fwd').value)||0, gst=parseFloat($('qt-gst').value)||0;
   const items=rows.map(r=>({product:r.product,qty:r.qty,unit:r.unit,rate:r.rate,known:r.known,base:r.base,baseUnit:r.baseUnit,amt:r.amt}));
   const sub=items.reduce((s,r)=>s+r.amt,0), gstAmt=(sub+fwd)*gst/100, total=sub+fwd+gstAmt;
   const btn=$('qt-dl'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Preparing...'; }
   await _qtRenderPdf(meta, items, fwd, gst);
-  // save the quote so the client keeps a history
-  try{ await sbRpc('portal_save_quote',{p_username:CLIENT.u,p_password:CLIENT.p,
-    p_quote_for:meta.cust,p_phone:meta.phone,p_date:meta.date,p_items:items,
-    p_subtotal:sub,p_forwarding:fwd,p_gst_pct:gst,p_gst_total:gstAmt,p_total:total}); qtLoadSaved(); }catch(_){}
-  if(btn){ btn.disabled=false; btn.innerHTML='📄 Download &amp; save quote'; }
+  try{
+    if(inv){ await sbRpc('portal_save_invoice',{p_username:CLIENT.u,p_password:CLIENT.p,
+      p_bill_to:meta.cust,p_phone:meta.phone,p_date:meta.date,p_items:items,
+      p_subtotal:sub,p_forwarding:fwd,p_gst_pct:gst,p_gst_total:gstAmt,p_total:total,p_invoice_no:docNo}); }
+    else { await sbRpc('portal_save_quote',{p_username:CLIENT.u,p_password:CLIENT.p,
+      p_quote_for:meta.cust,p_phone:meta.phone,p_date:meta.date,p_items:items,
+      p_subtotal:sub,p_forwarding:fwd,p_gst_pct:gst,p_gst_total:gstAmt,p_total:total,p_quote_no:docNo}); }
+    qtLoadSaved();
+  }catch(_){}
+  if(btn){ btn.disabled=false; btn.innerHTML = inv?'📄 Download &amp; save invoice':'📄 Download &amp; save quote'; }
 }
 async function qtLoadSaved(){
   const el=$('qt-saved'); if(!el) return;
-  let rows=[]; try{ rows=await sbRpc('portal_my_quotes',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ el.innerHTML='<div class="empty">No saved quotes yet.</div>'; return; }
-  if(!rows.length){ el.innerHTML='<div class="empty">No saved quotes yet.</div>'; return; }
+  const inv=_qtMode==='invoice';
+  let rows=[]; try{ rows=await sbRpc(inv?'portal_my_invoices':'portal_my_quotes',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ el.innerHTML='<div class="empty">Nothing saved yet.</div>'; return; }
+  _qtSavedList=rows;
+  if(!rows.length){ el.innerHTML='<div class="empty">'+(inv?'No invoices yet.':'No saved quotes yet.')+'</div>'; return; }
   const fmt=d=>{ if(!d)return''; const t=new Date(d); return isNaN(t)?d:t.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); };
   window._qtSaved={};
-  el.innerHTML=rows.map(q=>{ window._qtSaved[q.id]=q; return `
-    <div class="booking confirmed"><span class="pill pill-green">${_inr(q.total||0)}</span>
-      <div class="b-prod">${q.quote_for||'—'}</div>
-      <div class="b-meta">${fmt(q.qt_date||q.created_at)} · ${(q.items||[]).length} item(s)</div>
+  el.innerHTML=rows.map(q=>{ window._qtSaved[q.id]=q; const no=inv?q.invoice_no:q.quote_no; const to=inv?q.bill_to:q.quote_for; const dt=inv?q.inv_date:q.qt_date;
+    return `<div class="booking confirmed"><span class="pill pill-green">${_inr(q.total||0)}</span>
+      <div class="b-prod">${no?('#'+no+' · '):''}${to||'—'}</div>
+      <div class="b-meta">${fmt(dt||q.created_at)} · ${(q.items||[]).length} item(s)</div>
       <button class="btn btn-ghost" style="margin-top:8px;width:100%" onclick="qtDownloadSaved('${q.id}')">📄 Download again</button></div>`; }).join('');
 }
 async function qtDownloadSaved(id){
-  const q=(window._qtSaved||{})[id]; if(!q){ toast('Quote not found'); return; }
-  const meta={ cust:q.quote_for||'—', phone:q.customer_phone||'', date:q.qt_date||q.created_at||'' };
+  const q=(window._qtSaved||{})[id]; if(!q){ toast('Not found'); return; }
+  const inv=_qtMode==='invoice';
+  const meta={ cust:(inv?q.bill_to:q.quote_for)||'—', phone:q.customer_phone||'', date:(inv?q.inv_date:q.qt_date)||q.created_at||'', docType:_qtMode, docNo:(inv?q.invoice_no:q.quote_no) };
   await _qtRenderPdf(meta, q.items||[], parseFloat(q.forwarding)||0, parseFloat(q.gst_pct)||0);
 }
 
@@ -866,7 +921,7 @@ async function showDistribute(){
         <div style="flex:1"><label style="font-size:12px;color:var(--text3)">Qty</label><input id="ds-qty" type="number" min="0" style="width:100%;margin-top:4px"/></div>
         <div style="flex:1"><label style="font-size:12px;color:var(--text3)">Unit</label><select id="ds-unit" style="width:100%;margin-top:4px"><option value="bundles">Bundles</option><option value="packets">Packets</option><option value="sheets">Sheets</option><option value="kg">KG</option></select></div>
       </div>
-      <button class="btn" id="ds-btn" style="width:100%;margin-top:12px" onclick="submitDistribution()">Submit for review</button>
+      <button class="btn" id="ds-btn" style="width:100%;margin-top:12px" onclick="submitDistribution()">Record sale</button>
     </div>
     <div id="ds-history"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>`;
   loadDistHistory();
@@ -919,12 +974,13 @@ async function submitDistribution(){
   if(!qty||qty<=0){ toast('Enter a quantity'); return; }
   const btn=$('ds-btn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
   try{
-    await sbRpc('portal_log_distribution',{p_username:CLIENT.u,p_password:CLIENT.p,p_end_client:cid,p_product:pid,p_qty:qty,p_qty_type:unit});
-    toast('Submitted for review');
+    const res = await sbRpc('portal_log_distribution',{p_username:CLIENT.u,p_password:CLIENT.p,p_end_client:cid,p_product:pid,p_qty:qty,p_qty_type:unit});
+    const status = (typeof res==='string') ? res : (Array.isArray(res)?res[0]:'');
+    toast(status==='Delivered' ? 'Done — sold from your stock' : 'You\'re short of stock — sent to us for review');
     $('ds-qty').value='';
     loadDistHistory();
-  }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Submit for review'; return; }
-  btn.disabled=false; btn.textContent='Submit for review';
+  }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Record sale'; return; }
+  btn.disabled=false; btn.textContent='Record sale';
 }
 
 // "My Requests" — requested → available (Book) → booked. Status-aware.
