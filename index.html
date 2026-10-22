@@ -117,7 +117,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v31';
+const PORTAL_VER = 'v32';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -762,6 +762,7 @@ async function showProducts(){
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:16px">
       <label>Product name</label>
       <input id="pp-name" placeholder="e.g. Gum Tape Roll"/>
+      <div style="margin-top:10px"><label>Category</label><input id="pp-cat" list="pp-catlist" placeholder="e.g. Tapes, Lamination…"/><datalist id="pp-catlist"></datalist></div>
       <div style="display:flex;gap:10px;margin-top:10px">
         <div style="flex:1"><label>Sold by</label><select id="pp-unit"><option value="kg">Weight (kg)</option><option value="pcs">Pieces</option></select></div>
         <div style="flex:1"><label>Packets / bundle</label><input id="pp-np" inputmode="decimal" placeholder="e.g. 10"/></div>
@@ -780,24 +781,29 @@ async function showProducts(){
 async function ppRenderList(){
   const el=$('pp-list'); if(!el) return;
   try{ MY_PRODUCTS = await sbRpc('portal_my_products',{p_username:CLIENT.u,p_password:CLIENT.p})||[]; }catch(_){ MY_PRODUCTS=[]; }
-  if(!MY_PRODUCTS.length){ el.innerHTML='<div class="empty">No products yet. Add items you stock above.</div>'; return; }
-  el.innerHTML=MY_PRODUCTS.map(p=>{
+  if(!MY_PRODUCTS.length){ el.innerHTML='<div class="empty">No products yet. Add items you stock above.</div>'; if($('pp-catlist'))$('pp-catlist').innerHTML=''; return; }
+  // category suggestions from existing products
+  const cats=[...new Set(MY_PRODUCTS.map(p=>p.category).filter(Boolean))].sort();
+  if($('pp-catlist')) $('pp-catlist').innerHTML=cats.map(c=>`<option value="${(c||'').replace(/"/g,'&quot;')}">`).join('');
+  // group the list by category
+  const byCat={}; MY_PRODUCTS.forEach(p=>{ const c=p.category||'Uncategorised'; (byCat[c]=byCat[c]||[]).push(p); });
+  el.innerHTML=Object.keys(byCat).sort().map(c=>'<div class="group-h" style="margin:10px 2px 6px">'+c+'</div>'+byCat[c].map(p=>{
     const specs=[ (p.incentive_unit==='pcs'?'Pieces':'Weight'),
       p.bundle_wt?`${p.bundle_wt} kg/bundle`:'', p.num_packets?`${p.num_packets} pkts`:'',
       p.sheets_per_packet?`${p.sheets_per_packet} sh/pkt`:'', p.packet_wt?`${p.packet_wt} kg/pkt`:'' ].filter(Boolean).join(' · ');
     return `<div class="booking"><span class="pill" style="background:var(--surface3);color:var(--text2);cursor:pointer" onclick="ppDel('${(p.name||'').replace(/'/g,"\\'")}')">✕ Remove</span>
       <div class="b-prod">🏷️ ${p.name||'-'}</div>
-      <div class="b-meta">${specs||'No bundle details'}</div></div>`; }).join('');
+      <div class="b-meta">${specs||'No bundle details'}</div></div>`; }).join('')).join('');
 }
 async function ppSave(){
   const name=($('pp-name').value||'').trim(); if(!name){ toast('Enter a product name'); return; }
   const payload={ p_username:CLIENT.u, p_password:CLIENT.p, p_name:name,
-    p_unit:$('pp-unit').value||'kg',
+    p_unit:$('pp-unit').value||'kg', p_category:($('pp-cat').value||'').trim()||null,
     p_bundle_wt:($('pp-bw').value||'').trim()||null, p_packet_wt:($('pp-pw').value||'').trim()||null,
     p_num_packets:($('pp-np').value||'').trim()||null, p_sheets_per_packet:($('pp-spp').value||'').trim()||null };
   const btn=$('pp-btn'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span>'; }
   try{ await sbRpc('portal_add_my_product',payload);
-    ['pp-name','pp-bw','pp-pw','pp-np','pp-spp'].forEach(i=>{ if($(i))$(i).value=''; });
+    ['pp-name','pp-cat','pp-bw','pp-pw','pp-np','pp-spp'].forEach(i=>{ if($(i))$(i).value=''; });
     toast('Product saved'); await ppRenderList(); }
   catch(e){ toast(e.message); }
   if(btn){ btn.disabled=false; btn.textContent='+ Save product'; }
@@ -974,10 +980,16 @@ function _drCustom(){ const sel=$('dr-period'); if(sel) sel.value='custom'; load
 function _drUsh(u){ u=(u||'').toLowerCase(); return u==='bundles'?'bdl':u==='packets'?'pkt':u==='sheets'?'sh':u==='reams'?'rm':u==='pcs'?'pc':u; }
 function _drAgg(rows){
   const cats={};
-  (rows||[]).forEach(r=>{ const c=r.category||'Uncategorised'; if(!cats[c]) cats[c]={totals:{},lines:[]};
+  (rows||[]).forEach(r=>{ const c=r.category||'Uncategorised'; if(!cats[c]) cats[c]={totals:{},lineMap:{}};
     const u=(r.qty_type||'').toLowerCase(), q=parseFloat(r.qty)||0;
+    const name=r.product_name||'-', client=r.end_client_name||'';
     cats[c].totals[u]=(cats[c].totals[u]||0)+q;
-    cats[c].lines.push({name:r.product_name||'-',qty:q,unit:u,client:r.end_client_name||''}); });
+    // consolidate: one line per product + client + unit (sum the qty)
+    const key=name+'|'+client+'|'+u;
+    if(!cats[c].lineMap[key]) cats[c].lineMap[key]={name,client,unit:u,qty:0};
+    cats[c].lineMap[key].qty+=q; });
+  Object.keys(cats).forEach(c=>{ cats[c].lines=Object.values(cats[c].lineMap)
+    .sort((a,b)=>(a.client+'|'+a.name).localeCompare(b.client+'|'+b.name)); delete cats[c].lineMap; });
   return cats;
 }
 async function loadDistReport(){
