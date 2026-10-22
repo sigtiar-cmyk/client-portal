@@ -117,7 +117,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v30';
+const PORTAL_VER = 'v31';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -1067,7 +1067,7 @@ async function loadDistHistory(){
   if(!rows.length){ el.innerHTML='<div class="empty">No distributions logged yet.</div>'; return; }
   const fmt=d=>{ if(!d)return''; const t=new Date(d); return isNaN(t)?d:t.toLocaleDateString('en-IN',{day:'numeric',month:'short'}); };
   const pill=s=> s==='Delivered'?'<span class="pill pill-green">APPROVED ✓</span>': s==='Cancelled'?'<span class="pill pill-red">REJECTED</span>':'<span class="pill pill-amber">IN REVIEW</span>';
-  el.innerHTML='<div class="group-h">Your logged distributions</div>'+rows.map(r=>`
+  el.innerHTML=rows.map(r=>`
     <div class="booking">${pill(r.status)}
       <div class="b-prod">${r.product_name||'-'} → ${r.end_client_name||'-'}</div>
       <div class="b-meta">${r.qty} ${r.qty_type||''} • ${fmt(r.order_date)}</div>
