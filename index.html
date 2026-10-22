@@ -117,7 +117,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v28';
+const PORTAL_VER = 'v29';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -940,9 +940,83 @@ async function showDistribute(){
       </div>
       <button class="btn" id="ds-btn" style="width:100%;margin-top:12px" onclick="submitDistribution()">Record sale</button>
     </div>
+
+    <div class="group-h">📊 Daily report — category-wise</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text3)">Date</label><input id="dr-date" type="date" style="width:100%;margin-top:4px" onchange="loadDistReport()"/></div>
+      <button class="btn btn-ghost" style="white-space:nowrap" onclick="loadDistReport()">Show</button>
+      <button class="btn btn-ghost" id="dr-pdf" style="white-space:nowrap" onclick="dsReportPdf()">📄 PDF</button>
+    </div>
+    <div id="dr-out"></div>
+
+    <div class="group-h" style="margin-top:18px">Your logged distributions</div>
     <div id="ds-history"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>`;
+  $('dr-date').value=new Date().toISOString().split('T')[0];
+  loadDistReport();
   loadDistHistory();
   loadMechDues();
+}
+let _drRows=[], _drDate='';
+function _drUsh(u){ u=(u||'').toLowerCase(); return u==='bundles'?'bdl':u==='packets'?'pkt':u==='sheets'?'sh':u==='reams'?'rm':u==='pcs'?'pc':u; }
+function _drAgg(rows){
+  const cats={};
+  (rows||[]).forEach(r=>{ const c=r.category||'Uncategorised'; if(!cats[c]) cats[c]={totals:{},lines:[]};
+    const u=(r.qty_type||'').toLowerCase(), q=parseFloat(r.qty)||0;
+    cats[c].totals[u]=(cats[c].totals[u]||0)+q;
+    cats[c].lines.push({name:r.product_name||'-',qty:q,unit:u,client:r.end_client_name||''}); });
+  return cats;
+}
+async function loadDistReport(){
+  const date=($('dr-date')||{}).value; if(!date){ return; }
+  _drDate=date;
+  const out=$('dr-out'); if(!out) return;
+  out.innerHTML='<div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div>';
+  let rows=[]; try{ rows=await sbRpc('portal_distribution_report',{p_username:CLIENT.u,p_password:CLIENT.p,p_from:date,p_to:date})||[]; }
+  catch(e){ out.innerHTML='<div class="empty">'+(e.message||'Could not load report')+'</div>'; return; }
+  _drRows=rows;
+  if(!rows.length){ out.innerHTML='<div class="empty">No distributions on this day.</div>'; return; }
+  const cats=_drAgg(rows);
+  out.innerHTML=Object.keys(cats).sort().map(c=>{
+    const t=cats[c]; const tot=Object.keys(t.totals).map(u=>`${Math.round(t.totals[u]*100)/100} ${_drUsh(u)}`).join(' · ');
+    return `<div class="dcard"><div class="dcard-h"><span class="dcard-name">${c}</span><span class="dbadge">${tot}</span></div>
+      ${t.lines.map(l=>`<div class="dc-line"><span class="nm">${l.name}${l.client?(' → '+l.client):''}</span><span class="q">${l.qty} ${_drUsh(l.unit)}</span></div>`).join('')}</div>`;
+  }).join('');
+}
+async function dsReportPdf(){
+  if(!_drRows.length){ toast('Nothing to download for this day'); return; }
+  const cats=_drAgg(_drRows);
+  const fmtDate = _drDate ? new Date(_drDate).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '';
+  const bd='border:1px solid #bbb;padding:7px 9px', bdr=bd+';text-align:right';
+  let body='';
+  Object.keys(cats).sort().forEach(c=>{ const t=cats[c];
+    const tot=Object.keys(t.totals).map(u=>`${Math.round(t.totals[u]*100)/100} ${_drUsh(u)}`).join(' · ');
+    body+=`<tr><td style="${bd};background:#f0f7f2;font-weight:700" colspan="2">${c}</td><td style="${bdr};background:#f0f7f2;font-weight:700">${tot}</td></tr>`;
+    t.lines.forEach(l=>{ body+=`<tr><td style="${bd}">${l.name}</td><td style="${bd};color:#555">${l.client||''}</td><td style="${bdr}">${l.qty} ${_drUsh(l.unit)}</td></tr>`; });
+  });
+  const el=document.createElement('div');
+  el.style.cssText='width:760px;background:#fff;color:#111;padding:26px;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box';
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #166534;padding-bottom:10px">
+      <div style="font-size:21px;font-weight:800;color:#166534">${CLIENT.name||''}</div>
+      <div style="font-size:18px;font-weight:800;color:#777;letter-spacing:1px">DISTRIBUTION REPORT</div></div>
+    <div style="margin:12px 0;font-size:12px;color:#555"><b>Date:</b> ${fmtDate} &nbsp;·&nbsp; category-wise</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr><th style="border:1px solid #bbb;padding:7px 9px;background:#eee;text-align:left">Product</th>
+        <th style="border:1px solid #bbb;padding:7px 9px;background:#eee;text-align:left">To client</th>
+        <th style="border:1px solid #bbb;padding:7px 9px;background:#eee;text-align:right">Qty</th></tr></thead>
+      <tbody>${body}</tbody></table>`;
+  const holder=document.createElement('div');
+  holder.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:10px';
+  holder.appendChild(el); document.body.appendChild(holder);
+  const btn=$('dr-pdf'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span>'; }
+  try{
+    await _loadH2P();
+    el.offsetHeight; await new Promise(r=>setTimeout(r,350));
+    await html2pdf().set({ margin:8, filename:'Distribution-'+(_drDate||'report')+'.pdf', image:{type:'jpeg',quality:0.96},
+      html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',x:0,y:0,scrollX:0,scrollY:0,width:760,windowWidth:760},
+      jsPDF:{unit:'mm',format:'a4',orientation:'portrait',compress:true} }).from(el).save();
+  }catch(e){ toast('Could not build PDF — check your connection'); }
+  finally{ holder.remove(); if(btn){ btn.disabled=false; btn.innerHTML='📄 PDF'; } }
 }
 // What this reseller owes their clients' mechanics/referrers on approved resale distributions.
 async function loadMechDues(){
