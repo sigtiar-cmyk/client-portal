@@ -117,7 +117,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v29';
+const PORTAL_VER = 'v30';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -941,22 +941,36 @@ async function showDistribute(){
       <button class="btn" id="ds-btn" style="width:100%;margin-top:12px" onclick="submitDistribution()">Record sale</button>
     </div>
 
-    <div class="group-h">📊 Daily report — category-wise</div>
+    <div class="group-h">📊 Distribution report — category-wise</div>
+    <select id="dr-period" style="width:100%;margin-bottom:8px" onchange="_drSetPeriod(this.value)">
+      <option value="day">Today</option><option value="week">This week</option><option value="month">This month</option><option value="custom">Custom range</option>
+    </select>
     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end">
-      <div style="flex:1"><label style="font-size:12px;color:var(--text3)">Date</label><input id="dr-date" type="date" style="width:100%;margin-top:4px" onchange="loadDistReport()"/></div>
-      <button class="btn btn-ghost" style="white-space:nowrap" onclick="loadDistReport()">Show</button>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text3)">From</label><input id="dr-from" type="date" style="width:100%;margin-top:4px" onchange="_drCustom()"/></div>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text3)">To</label><input id="dr-to" type="date" style="width:100%;margin-top:4px" onchange="_drCustom()"/></div>
       <button class="btn btn-ghost" id="dr-pdf" style="white-space:nowrap" onclick="dsReportPdf()">📄 PDF</button>
     </div>
     <div id="dr-out"></div>
 
     <div class="group-h" style="margin-top:18px">Your logged distributions</div>
     <div id="ds-history"><div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div></div>`;
-  $('dr-date').value=new Date().toISOString().split('T')[0];
-  loadDistReport();
+  _drSetPeriod('day');
   loadDistHistory();
   loadMechDues();
 }
-let _drRows=[], _drDate='';
+let _drRows=[], _drFrom='', _drTo='';
+function _drIso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _drSetPeriod(p){
+  const now=new Date(); let from, to=_drIso(now);
+  if(p==='day'){ from=_drIso(now); }
+  else if(p==='week'){ const day=(now.getDay()+6)%7; const mon=new Date(now); mon.setDate(now.getDate()-day); from=_drIso(mon); }
+  else if(p==='month'){ from=_drIso(new Date(now.getFullYear(),now.getMonth(),1)); }
+  else { return; }   // custom: leave the inputs as they are
+  if($('dr-from')) $('dr-from').value=from;
+  if($('dr-to')) $('dr-to').value=to;
+  loadDistReport();
+}
+function _drCustom(){ const sel=$('dr-period'); if(sel) sel.value='custom'; loadDistReport(); }
 function _drUsh(u){ u=(u||'').toLowerCase(); return u==='bundles'?'bdl':u==='packets'?'pkt':u==='sheets'?'sh':u==='reams'?'rm':u==='pcs'?'pc':u; }
 function _drAgg(rows){
   const cats={};
@@ -967,11 +981,11 @@ function _drAgg(rows){
   return cats;
 }
 async function loadDistReport(){
-  const date=($('dr-date')||{}).value; if(!date){ return; }
-  _drDate=date;
+  const from=($('dr-from')||{}).value, to=($('dr-to')||{}).value; if(!from||!to){ return; }
+  _drFrom=from; _drTo=to;
   const out=$('dr-out'); if(!out) return;
   out.innerHTML='<div class="empty"><span class="spin" style="border-top-color:var(--green)"></span></div>';
-  let rows=[]; try{ rows=await sbRpc('portal_distribution_report',{p_username:CLIENT.u,p_password:CLIENT.p,p_from:date,p_to:date})||[]; }
+  let rows=[]; try{ rows=await sbRpc('portal_distribution_report',{p_username:CLIENT.u,p_password:CLIENT.p,p_from:from,p_to:to})||[]; }
   catch(e){ out.innerHTML='<div class="empty">'+(e.message||'Could not load report')+'</div>'; return; }
   _drRows=rows;
   if(!rows.length){ out.innerHTML='<div class="empty">No distributions on this day.</div>'; return; }
@@ -983,9 +997,10 @@ async function loadDistReport(){
   }).join('');
 }
 async function dsReportPdf(){
-  if(!_drRows.length){ toast('Nothing to download for this day'); return; }
+  if(!_drRows.length){ toast('Nothing to download for this range'); return; }
   const cats=_drAgg(_drRows);
-  const fmtDate = _drDate ? new Date(_drDate).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '';
+  const f=d=>d?new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}):'';
+  const fmtDate = (_drFrom===_drTo) ? f(_drFrom) : (f(_drFrom)+' — '+f(_drTo));
   const bd='border:1px solid #bbb;padding:7px 9px', bdr=bd+';text-align:right';
   let body='';
   Object.keys(cats).sort().forEach(c=>{ const t=cats[c];
@@ -1012,7 +1027,7 @@ async function dsReportPdf(){
   try{
     await _loadH2P();
     el.offsetHeight; await new Promise(r=>setTimeout(r,350));
-    await html2pdf().set({ margin:8, filename:'Distribution-'+(_drDate||'report')+'.pdf', image:{type:'jpeg',quality:0.96},
+    await html2pdf().set({ margin:8, filename:'Distribution-'+(_drFrom||'report')+(_drTo&&_drTo!==_drFrom?'_to_'+_drTo:'')+'.pdf', image:{type:'jpeg',quality:0.96},
       html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',x:0,y:0,scrollX:0,scrollY:0,width:760,windowWidth:760},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait',compress:true} }).from(el).save();
   }catch(e){ toast('Could not build PDF — check your connection'); }
