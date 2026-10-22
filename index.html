@@ -117,7 +117,7 @@
 const SB_URL = 'https://xyiqlrqymmiiarckywqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5aXFscnF5bW1paWFyY2t5d3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDM1OTMsImV4cCI6MjA5NDE3OTU5M30.Vxb1iDn_ecw9w7OA04royIuzXFSjOWD5M3KnHiNRPCo';
 
-const PORTAL_VER = 'v27';
+const PORTAL_VER = 'v28';
 const $ = id => document.getElementById(id);
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 
@@ -536,7 +536,10 @@ async function showQuote(){
       <button class="btn btn-sm" id="qm-quote" onclick="qtSetMode('quote')" style="border-radius:8px">📝 Quotation</button>
       <button class="btn btn-sm" id="qm-inv" onclick="qtSetMode('invoice')" style="border-radius:8px;background:transparent;color:var(--text)">🧾 Invoice</button>
     </div>
-    <div class="group-h" id="qt-doc-title">New quotation</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 4px 6px">
+      <span class="group-h" id="qt-doc-title" style="margin:0">New quotation</span>
+      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="qtResetForm()">+ New</button>
+    </div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
       <label id="qt-cust-label">Quote for (your customer)</label>
       <input id="qt-cust" list="qt-custlist" placeholder="Type a name, or pick your client"/>
@@ -703,6 +706,7 @@ async function qtGeneratePdf(){
   const sub=items.reduce((s,r)=>s+r.amt,0), gstAmt=(sub+fwd)*gst/100, total=sub+fwd+gstAmt;
   const btn=$('qt-dl'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Preparing...'; }
   await _qtRenderPdf(meta, items, fwd, gst);
+  let saveErr=null;
   try{
     if(inv){ await sbRpc('portal_save_invoice',{p_username:CLIENT.u,p_password:CLIENT.p,
       p_bill_to:meta.cust,p_phone:meta.phone,p_date:meta.date,p_items:items,
@@ -710,9 +714,22 @@ async function qtGeneratePdf(){
     else { await sbRpc('portal_save_quote',{p_username:CLIENT.u,p_password:CLIENT.p,
       p_quote_for:meta.cust,p_phone:meta.phone,p_date:meta.date,p_items:items,
       p_subtotal:sub,p_forwarding:fwd,p_gst_pct:gst,p_gst_total:gstAmt,p_total:total,p_quote_no:docNo}); }
-    qtLoadSaved();
-  }catch(_){}
+  }catch(e){ saveErr=e; }
   if(btn){ btn.disabled=false; btn.innerHTML = inv?'📄 Download &amp; save invoice':'📄 Download &amp; save quote'; }
+  if(saveErr){ toast('Downloaded, but could not save: '+(saveErr.message||'try again')); return; }
+  toast((inv?'Invoice':'Quote')+' #'+docNo+' saved');
+  qtLoadSaved();
+  qtResetForm();   // auto-start a fresh document
+}
+function qtResetForm(){
+  if($('qt-cust')) $('qt-cust').value='';
+  if($('qt-phone')) $('qt-phone').value='';
+  if($('qt-fwd')) $('qt-fwd').value='0';
+  if($('qt-gst')) $('qt-gst').value='0';
+  if($('qt-date')) $('qt-date').value=new Date().toISOString().split('T')[0];
+  const wrap=$('qt-items'); if(wrap) wrap.innerHTML='';
+  qtAddRow(); qtRecalc();
+  try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(_){}
 }
 async function qtLoadSaved(){
   const el=$('qt-saved'); if(!el) return;
